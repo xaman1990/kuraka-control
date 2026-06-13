@@ -1,0 +1,36 @@
+{
+  "req_name": "REQ-20260612-S12-design-system",
+  "mode": "reduced",
+  "status": "completed",
+  "current_phase": "7",
+  "phases_completed": ["1+2", "4b", "5", "5-rework", "6.8", "7"],
+  "phases_pending": [],
+  "phases_skipped": {
+    "2.5": "no logic to test-plan",
+    "3": "no schema/contract/DB seam (Governance enum pre-frozen)",
+    "5.5": "no auth/PII/endpoints/network",
+    "6": "presentational components; covered by 6.8 showcase smoke",
+    "6.5": "no user flows until S1+",
+    "6.7": "no deploy/infra surface change"
+  },
+  "started_at": "2026-06-12",
+  "last_updated": "2026-06-13",
+  "branch": "feat/s12-design-system",
+  "artifacts": {
+    "req_path": "docs/process/REQ-20260612-S12-design-system.md",
+    "story_paths": ["docs/process/stories/S12-design-system.md"],
+    "review_report": "docs/process/reviews/REVIEW-S12.md",
+    "smoke_test": "docs/process/smoke-tests/SMOKE-S12.md",
+    "retro_path": "docs/process/agent-retrospectives/RETRO-REQ-20260612-S12-design-system.md",
+    "telemetry_path": "docs/process/agent-telemetry/REQ-20260612-S12-design-system-telemetry.json"
+  },
+  "commits": [
+    "52966db bootstrap baseline",
+    "b2a1cb0 REQ + story",
+    "2a580df implementation",
+    "ad00bf9 review fixes",
+    "2f78748 smoke test"
+  ],
+  "outcome": "Quipu design system shipped: 7 components + governance primitives + /showcase; typecheck/lint/build green; browser smoke PASS.",
+  "incident": "po-analyst ran destructive vault rsync --delete (reverted Rule 16); sie_v2 docs mirror wiped + recovered from source. Patch A (subagent no-sync guard) applied to .claude/project/agents/. Vault-source fixes (Rule 16 at source, react-vite profile) deferred to user."
+}
