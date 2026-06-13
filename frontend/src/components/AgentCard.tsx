@@ -1,9 +1,9 @@
-import { Governance } from "@kuraka-control/contracts";
+import { AgentKey, Governance } from "@kuraka-control/contracts";
 import { GovernanceBadge } from "./GovernanceBadge.js";
 
 interface AgentCardProps {
   name: string;
-  agentKey: string;
+  agentKey: AgentKey;
   governance: Governance;
 }
 

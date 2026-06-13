@@ -16,8 +16,6 @@ export default tseslint.config(
       "no-unused-vars": "off",
       // Allow console for dev tooling in this early-stage project.
       "no-console": "warn",
-      // Allow @ts-expect-error with an explanation (used in NavItem pattern).
-      "@typescript-eslint/ban-ts-comment": "off",
     },
   },
 );

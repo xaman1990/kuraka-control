@@ -9,6 +9,27 @@
  */
 import { z } from "zod";
 
+/** Per-agent color key — matches the 16 `--ag-*` tokens in tokens.css. */
+export const AgentKey = z.enum([
+  "amauta",
+  "arki",
+  "inti",
+  "architect-reviewer",
+  "code-reviewer",
+  "backend-developer",
+  "frontend-developer",
+  "story-refiner",
+  "deployment-verifier",
+  "e2e-tester",
+  "test-engineer",
+  "final-auditor",
+  "migration-reviewer",
+  "pattern-detector",
+  "po-analyst",
+  "security-reviewer",
+]);
+export type AgentKey = z.infer<typeof AgentKey>;
+
 /** Two-color governance (C6 / ADR-007). */
 export const Governance = z.enum(["framework", "project"]);
 export type Governance = z.infer<typeof Governance>;
