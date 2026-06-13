@@ -1,0 +1,1 @@
+Repository layer — I/O adapters: VaultRepository, ProjectRepository, TelemetryRepository, BudgetRepository, ScriptRunner (only spawner), WriteFirewall (only writer), Watcher. Only this layer touches fs/subprocess.

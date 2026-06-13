@@ -1,0 +1,22 @@
+{
+  "name": "kuraka-control",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kuraka Control Plane — local single-user dashboard to govern the Kuraka framework across consumer projects.",
+  "workspaces": [
+    "packages/*",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm -w backend run dev\" \"npm -w frontend run dev\"",
+    "build": "npm -w packages/contracts run build && npm -w backend run build && npm -w frontend run build",
+    "test": "npm -w backend run test && npm -w frontend run test",
+    "lint": "npm -w backend run lint && npm -w frontend run lint",
+    "typecheck": "npm -w backend run typecheck && npm -w frontend run typecheck"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.6.0"
+  }
+}

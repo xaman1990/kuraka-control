@@ -1,0 +1,18 @@
+# Kuraka framework files (versioned externally; not source of this repo)
+.claude/agents/
+.claude/skills/
+.claude/commands/
+.claude/hooks/
+.claude/rules/16-agent-backup.md
+.claude/rules/17-kuraka-token-optimizations.md
+# Per-cycle telemetry JSONs (noise; the consolidated DASHBOARD.md is tracked)
+docs/process/agent-telemetry/*.json
+
+# --- application stack (added by arki) ---
+node_modules/
+dist/
+*.tsbuildinfo
+.env
+.env.local
+.DS_Store
+.pytest_cache/

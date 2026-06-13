@@ -1,0 +1,7 @@
+# kuraka.lock — pins the mounted Kuraka framework version for this project.
+# Canonical writer: kuraka-init.py / mount-kuraka.sh. arki seeds it to match the
+# registry entry (<vault>/projects/kuraka-control.md kuraka_version) at bootstrap.
+# Drift = this version vs the vault's current version (docs/arquitectura/domain-model.md).
+kuraka_version: 0.3.4
+mounted_at: 2026-06-07
+vault: /Users/xmn/Documents/Agentes/AgentesTrabajos/kuraka

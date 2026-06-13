@@ -1,0 +1,89 @@
+# =============================================================================
+# kuraka.config.yaml — kuraka-control (Kuraka Control Plane)
+# Schema version 1. Authored by arki during Greenfield Bootstrap.
+# Stack is LOCKED by discovery constraint C1; arki filled the open decisions
+# (TypeScript, npm-workspaces monorepo, lib + test-runner choices).
+# =============================================================================
+
+schema_version: 1
+
+project:
+  name: kuraka-control
+  description: |
+    Local single-user control plane to govern the Kuraka framework across
+    consumer projects. Observe the fleet (registry, agents, telemetry, drift)
+    and act on the RETRO improvement loop with a traceable, governed workflow.
+  repo_url: ""
+
+# -----------------------------------------------------------------------------
+# stack
+# Two-piece topology in one repo (C1), npm-workspaces monorepo.
+# Commands are run from the repo root; workspace-scoped via `npm -w`.
+# -----------------------------------------------------------------------------
+stack:
+
+  backend:
+    language: typescript
+    framework: express
+    package_manager: npm
+    orm: none                         # no DB — the vault filesystem IS the store (C2)
+    lint_cmd: "npm -w backend run lint"
+    test_cmd: "npm -w backend run test"
+    typecheck_cmd: "npm -w backend run typecheck"
+    format_cmd: "npm -w backend run format"
+
+  frontend:
+    language: typescript
+    framework: react
+    package_manager: npm
+    state_mgmt: zustand
+    lint_cmd: "npm -w frontend run lint"
+    test_cmd: "npm -w frontend run test"
+    typecheck_cmd: "npm -w frontend run typecheck"
+    format_cmd: "npm -w frontend run format"
+
+  # No `database:` section — kuraka-control has no DB. The source of truth is
+  # the vault filesystem + each project's live filesystem (C2/C4). Persistent
+  # state the app itself owns (triage records) lives in `<vault>/retro-triage/`.
+
+# -----------------------------------------------------------------------------
+# architecture
+# Backend = Express layered (route → service → repository), where "repository"
+# is a filesystem/subprocess adapter over the vault & project paths, not a DB.
+# Frontend layers documented separately in docs/arquitectura/layers.md.
+# -----------------------------------------------------------------------------
+architecture:
+
+  layers:
+    - route          # Express routers: HTTP shape, zod request validation, status codes
+    - service        # use-cases: governance actions, triage state machine, drift calc
+    - repository     # fs/subprocess adapters: vault reader, project reader, script runner
+    - domain         # pure types + parsers (frontmatter, yaml, telemetry, triage states)
+
+  paths:
+    backend_root: backend/
+    frontend_root: frontend/
+    tests_root: tests/                      # repo-level cross-cutting; unit tests co-locate per workspace
+    docs_process_root: docs/process/        # REQs, stories, retros, telemetry
+    # No migrations_root — no database.
+
+# -----------------------------------------------------------------------------
+# conventions
+# -----------------------------------------------------------------------------
+conventions:
+  naming_language: english
+  null_syntax: "T | None"                   # TS: `T | null` / `T | undefined`; see conventions/typescript.md
+  multi_tenant: false                       # single local user by design (NFR)
+  tenant_column_name: ""
+  enums_for_states: true                    # RETRO state machine MUST be a typed union/enum (RL-1..RL-7)
+  max_file_loc: 400
+  max_function_loc: 50
+  max_frontend_file_loc: 300                # React components stay small
+
+# -----------------------------------------------------------------------------
+# workflow
+# -----------------------------------------------------------------------------
+workflow:
+  default_mode: normal                      # full pipeline; this app touches fs writes + subprocess boundaries
+  gates_require_user_approval: true
+  parallel_implementation: true             # backend + frontend stories often independent behind the contract

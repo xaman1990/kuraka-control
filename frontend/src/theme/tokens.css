@@ -1,0 +1,46 @@
+/*
+ * Quipu theme tokens (Andean: obsidian + gold (Inti) + jade).
+ * Seeded by arki from spec-v1 §2. Refine against the .pen in story S12.
+ * Governance: --gov-framework (gold) / --gov-project (jade) — ADR-007.
+ */
+@import "tailwindcss";
+
+:root {
+  /* obsidian base */
+  --bg: #0d0f12;
+  --surface: #15181d;
+  --surface-2: #1d2128;
+  --border: #2a2f38;
+
+  /* text ramp */
+  --text: #e6e9ef;
+  --text-2: #aab2c0;
+  --text-3: #6b7382;
+
+  /* governance two-color */
+  --accent: #d4af37;        /* gold / Inti */
+  --gov-framework: var(--accent);
+  --jade: #2fae8f;          /* jade */
+  --gov-project: var(--jade);
+
+  /* quipu cord/connector lines */
+  --cord: #3a4150;
+
+  /* per-agent dot colors (16 agents, real frontmatter colors) */
+  --ag-amauta: #d4af37;
+  --ag-arki: #a6e22e;
+  --ag-inti: #e6db74;
+  --ag-architect-reviewer: #e04848;
+  --ag-code-reviewer: #e04848;
+  --ag-backend-developer: #4caf50;
+  --ag-frontend-developer: #4a90e2;
+  --ag-story-refiner: #4a90e2;
+  --ag-deployment-verifier: #f5f5f5;
+  --ag-e2e-tester: #2ad4d4;
+  --ag-test-engineer: #2ad4d4;
+  --ag-final-auditor: #e8902a;
+  --ag-migration-reviewer: #8a909c;
+  --ag-pattern-detector: #e6db74;
+  --ag-po-analyst: #9b59d0;
+  --ag-security-reviewer: #d44ad4;
+}
