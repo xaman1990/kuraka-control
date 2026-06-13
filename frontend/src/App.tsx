@@ -1,9 +1,15 @@
 /**
- * App shell — skeleton seeded by arki. Real screens (Monitor, Project Detail,
- * Triage, Agentes, Onboard) and routing arrive via /kuraka cycles, starting
- * with S12 (design system) then S1 (registry → projects list/detail).
+ * App shell — bootstraps react-router-dom v6.
+ * Routes:
+ *   /          — Landing (health probe, keeps the arki-seeded check reachable)
+ *   /showcase  — S12 design-system visual proof (Phase 6.8 smoke)
+ *
+ * Real screens (Monitor, Project Detail, Triage, Agents, Onboard) arrive via
+ * subsequent /kuraka cycles starting with S1 (registry).
  */
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Showcase } from "./routes/Showcase.js";
 
 interface Health {
   ok: boolean;
@@ -12,7 +18,7 @@ interface Health {
   vaultReadable: boolean;
 }
 
-export function App() {
+function Landing() {
   const { data, isLoading, isError } = useQuery<Health>({
     queryKey: ["health"],
     queryFn: async () => {
@@ -36,6 +42,12 @@ export function App() {
       <p style={{ color: "var(--text-2)" }}>
         Control plane skeleton. Screens arrive via <code>/kuraka</code> cycles.
       </p>
+      <p style={{ color: "var(--text-2)", marginTop: "1rem" }}>
+        <Link to="/showcase" style={{ color: "var(--jade)" }}>
+          /showcase
+        </Link>{" "}
+        — design system visual proof (S12)
+      </p>
       {isLoading && <p>checking backend…</p>}
       {isError && <p style={{ color: "var(--gov-project)" }}>backend unreachable</p>}
       {data && (
@@ -48,5 +60,16 @@ export function App() {
         </p>
       )}
     </main>
+  );
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/showcase" element={<Showcase />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

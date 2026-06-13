@@ -44,3 +44,30 @@
   --ag-po-analyst: #9b59d0;
   --ag-security-reviewer: #d44ad4;
 }
+
+/*
+ * Tailwind v4 @theme block — maps :root tokens to utility-accessible names.
+ * Enables classes like bg-bg, bg-surface, text-text, border-border, etc.
+ * (AC-T1: required by S12 design-system story).
+ */
+@theme {
+  /* base surfaces */
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+
+  /* text ramp */
+  --color-text: var(--text);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+
+  /* governance */
+  --color-accent: var(--accent);
+  --color-jade: var(--jade);
+  --color-gov-framework: var(--gov-framework);
+  --color-gov-project: var(--gov-project);
+
+  /* cord */
+  --color-cord: var(--cord);
+}
