@@ -9,7 +9,7 @@ import { GovernanceBadge } from "./GovernanceBadge.js";
  * Co-located here (not in contracts) because the status vocabulary is
  * owned by the vault, not the API seam (AC-15).
  */
-const KNOWN_STATUS_VARIANT: Record<string, "accent" | "jade" | "neutral" | "muted"> = {
+export const KNOWN_STATUS_VARIANT: Record<string, "accent" | "jade" | "neutral" | "muted"> = {
   active: "jade",
   paused: "neutral",
   onboarding: "accent",
@@ -47,7 +47,6 @@ export function ProjectCard({
       style={{
         background: "var(--surface)",
         border: "1px solid var(--border)",
-        display: "flex",
       }}
     >
       <div className="flex items-start justify-between gap-2">

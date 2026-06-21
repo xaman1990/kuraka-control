@@ -17,7 +17,7 @@ export class VaultUnreadableError extends Error {
   readonly vaultPath: string;
 
   constructor(vaultPath: string, cause?: unknown) {
-    super(`Cannot read the Kuraka vault at: ${vaultPath}`);
+    super(`Cannot read the Kuraka vault projects directory at: ${vaultPath}`);
     this.name = "VaultUnreadableError";
     this.vaultPath = vaultPath;
     if (cause instanceof Error) {
@@ -46,7 +46,7 @@ export async function listProjects(
   try {
     entries = await fs.readdir(projectsDir, { withFileTypes: true });
   } catch (err) {
-    throw new VaultUnreadableError(projectsDir, err);
+    throw new VaultUnreadableError(options.vaultRoot, err);
   }
 
   const mdFiles = entries.filter(

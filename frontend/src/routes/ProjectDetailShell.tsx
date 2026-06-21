@@ -4,14 +4,7 @@ import { ProjectListResponse } from "@kuraka-control/contracts";
 import { fetchProjects } from "../api/projects.js";
 import { Badge } from "../components/Badge.js";
 import { GovernanceBadge } from "../components/GovernanceBadge.js";
-
-const KNOWN_STATUS_VARIANT: Record<string, "accent" | "jade" | "neutral" | "muted"> = {
-  active: "jade",
-  paused: "neutral",
-  onboarding: "accent",
-  archived: "muted",
-  mapped: "accent",
-};
+import { KNOWN_STATUS_VARIANT } from "../components/ProjectCard.js";
 
 /**
  * ProjectDetailShell — /projects/:name route.

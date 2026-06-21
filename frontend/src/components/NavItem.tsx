@@ -53,6 +53,7 @@ export function NavItem({ label, icon = null, active = false, href = null }: Nav
       className={baseClass}
       style={style}
       aria-current={active ? "page" : undefined}
+      aria-disabled="true"
     >
       {content}
     </button>
