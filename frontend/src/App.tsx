@@ -1,15 +1,16 @@
 /**
  * App shell — bootstraps react-router-dom v6.
  * Routes:
- *   /          — Landing (health probe, keeps the arki-seeded check reachable)
- *   /showcase  — S12 design-system visual proof (Phase 6.8 smoke)
- *
- * Real screens (Monitor, Project Detail, Triage, Agents, Onboard) arrive via
- * subsequent /kuraka cycles starting with S1 (registry).
+ *   /                  — Landing (health probe)
+ *   /showcase          — S12 design-system visual proof (Phase 6.8 smoke)
+ *   /projects          — ProjectsPage (S1 registry)
+ *   /projects/:name    — ProjectDetailShell (S1 placeholder)
  */
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Showcase } from "./routes/Showcase.js";
+import { ProjectsPage } from "./routes/ProjectsPage.js";
+import { ProjectDetailShell } from "./routes/ProjectDetailShell.js";
 
 interface Health {
   ok: boolean;
@@ -48,6 +49,12 @@ function Landing() {
         </Link>{" "}
         — design system visual proof (S12)
       </p>
+      <p style={{ color: "var(--text-2)", marginTop: "0.5rem" }}>
+        <Link to="/projects" style={{ color: "var(--jade)" }}>
+          /projects
+        </Link>{" "}
+        — vault registry (S1)
+      </p>
       {isLoading && <p>checking backend…</p>}
       {isError && <p style={{ color: "var(--gov-project)" }}>backend unreachable</p>}
       {data && (
@@ -69,6 +76,8 @@ export function App() {
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/showcase" element={<Showcase />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/projects/:name" element={<ProjectDetailShell />} />
       </Routes>
     </BrowserRouter>
   );

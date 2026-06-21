@@ -121,7 +121,7 @@ export function Showcase() {
             stack="React 18 + FastAPI + Tailwind v4"
             status="active"
             governance="framework"
-            kurakaVersion="0.9.2"
+            kuraka_version="0.9.2"
           />
           <ProjectCard
             name="sie-v2"
@@ -134,7 +134,7 @@ export function Showcase() {
             stack="Next.js 14 + Prisma"
             status="onboarding"
             governance="project"
-            kurakaVersion="0.9.0"
+            kuraka_version="0.9.0"
           />
           <ProjectCard
             name="legacy-erp"
