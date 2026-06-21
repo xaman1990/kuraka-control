@@ -10,11 +10,13 @@
 import express from "express";
 import { env } from "./config/env.js";
 import { healthRouter } from "./routes/health.js";
+import { projectsRouter } from "./routes/projects.js";
 
 const app = express();
 app.use(express.json());
 
 app.use("/api", healthRouter);
+app.use("/api", projectsRouter);
 
 app.listen(env.backendPort, () => {
   // eslint-disable-next-line no-console

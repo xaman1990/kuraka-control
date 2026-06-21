@@ -49,14 +49,16 @@ export const ProjectSummary = z.object({
   name: z.string(),
   path: z.string(),
   stack: z.string(),
-  kuraka_version: z.string(),
+  kuraka_version: z.coerce.string(),
   has_project_layer: z.boolean(),
   default_mode: z.string(),
+  status: z.string(),
+  repo_url: z.string().nullable(),
   focus_scope: z.string().nullable(),
-  status: z.enum(["active", "paused", "onboarding", "archived"]),
   last_mount: z.string().nullable(),
   last_sync: z.string().nullable(),
   tags: z.array(z.string()),
+  governance: z.literal("project"),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummary>;
 
