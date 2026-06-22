@@ -77,3 +77,30 @@ export const ActionResult = z.object({
   requiresRestart: z.boolean().optional(),
 });
 export type ActionResult = z.infer<typeof ActionResult>;
+
+// ---- S2: Project Detail + Drift ------------------------------------------------
+
+/** Drift state — app-owned closed vocabulary (LL-008 → z.enum is correct). */
+export const DriftState = z.enum([
+  "up_to_date",   // lock == vault  (segment-wise equal)
+  "behind",       // lock <  vault
+  "ahead",        // lock >  vault  (vault rolled back / pre-release lock)
+  "not_pinned",   // no readable kuraka.lock on disk  (MAJORITY: 7/8 today)
+  "unknown",      // vault version unreadable OR either version not semver
+]);
+export type DriftState = z.infer<typeof DriftState>;
+
+export const Drift = z.object({
+  state: DriftState,
+  lock_version: z.string().nullable(),           // <project>/kuraka.lock kuraka_version; null if absent/unreadable/missing-field
+  vault_version: z.string().nullable(),          // DEFAULT_VERSION from kuraka-init.py; null if unreadable/regex-miss
+  registry_version: z.string(),                  // mirror of ProjectSummary.kuraka_version (already string in S1)
+  registry_matches_lock: z.boolean().nullable(), // null when lock_version is null (nothing to compare)
+});
+export type Drift = z.infer<typeof Drift>;
+
+/** Detail = the frozen summary + computed drift. Composition, NOT redefinition. */
+export const ProjectDetail = ProjectSummary.extend({
+  drift: Drift,
+});
+export type ProjectDetail = z.infer<typeof ProjectDetail>;
