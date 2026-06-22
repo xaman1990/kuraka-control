@@ -23,6 +23,9 @@
   --jade: #2fae8f;          /* jade */
   --gov-project: var(--jade);
 
+  /* state colors */
+  --warning: #e8902a;
+
   /* quipu cord/connector lines */
   --cord: #3a4150;
 
@@ -67,6 +70,9 @@
   --color-jade: var(--jade);
   --color-gov-framework: var(--gov-framework);
   --color-gov-project: var(--gov-project);
+
+  /* state */
+  --color-warning: var(--warning);
 
   /* cord */
   --color-cord: var(--cord);

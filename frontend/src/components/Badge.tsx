@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 
-type BadgeVariant = "neutral" | "accent" | "jade" | "muted";
+export type BadgeVariant = "neutral" | "accent" | "jade" | "muted" | "warning";
 
 interface BadgeProps {
   children: ReactNode;
@@ -28,11 +28,16 @@ const variantStyles: Record<BadgeVariant, { color: string; borderColor: string; 
     borderColor: "var(--border)",
     color: "var(--text-3)",
   },
+  warning: {
+    background: "var(--surface-2)",
+    borderColor: "var(--warning)",
+    color: "var(--warning)",
+  },
 };
 
 /**
  * Badge — generic status/label pill.
- * Variants: neutral | accent | jade | muted.
+ * Variants: neutral | accent | jade | muted | warning.
  * No hard-coded colors (AC-G2) — all via CSS vars from tokens.css.
  */
 export function Badge({ children, variant = "neutral" }: BadgeProps) {

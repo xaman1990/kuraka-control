@@ -3,103 +3,7 @@ import { useLocation } from "react-router-dom";
 import { ProjectListResponse } from "@kuraka-control/contracts";
 import { fetchProjects } from "../api/projects.js";
 import { ProjectCard } from "../components/ProjectCard.js";
-import { NavItem } from "../components/NavItem.js";
-
-// ── Sidebar ──────────────────────────────────────────────────────────────────
-
-interface NavGroup {
-  label: string;
-  items: Array<{ label: string; href?: string }>;
-}
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "OBSERVAR",
-    items: [
-      { label: "Resumen" },
-      { label: "Proyectos", href: "/projects" },
-      { label: "Agentes" },
-    ],
-  },
-  {
-    label: "DESARROLLAR",
-    items: [
-      { label: "Cockpit" },
-      { label: "Backlog" },
-      { label: "Artefactos" },
-    ],
-  },
-  {
-    label: "MEJORAR",
-    items: [{ label: "RETRO Triage" }, { label: "Insights" }],
-  },
-  {
-    label: "SISTEMA",
-    items: [{ label: "Coordinación" }, { label: "Onboard" }],
-  },
-];
-
-function Sidebar({ activePath }: { activePath: string }) {
-  return (
-    <aside
-      className="flex flex-col gap-2 shrink-0 overflow-y-auto"
-      style={{
-        width: "248px",
-        background: "var(--surface)",
-        borderRight: "1px solid var(--border)",
-        padding: "18px",
-      }}
-    >
-      {/* Brand */}
-      <div className="flex items-center gap-2 mb-4">
-        <svg
-          width="22"
-          height="22"
-          viewBox="0 0 22 22"
-          fill="none"
-          aria-hidden="true"
-        >
-          <rect width="22" height="22" rx="5" fill="var(--accent)" />
-          <path
-            d="M6 16 L11 6 L16 16"
-            stroke="var(--bg)"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-        <span
-          className="text-sm font-bold tracking-tight"
-          style={{ color: "var(--text)" }}
-        >
-          Kuraka Control
-        </span>
-      </div>
-
-      {/* Nav groups */}
-      {NAV_GROUPS.map((group) => (
-        <div key={group.label} className="mb-2">
-          <p
-            className="text-xs font-bold uppercase tracking-widest mb-1 px-3"
-            style={{ color: "var(--text-3)" }}
-          >
-            {group.label}
-          </p>
-          <nav className="flex flex-col gap-0.5">
-            {group.items.map((item) => (
-              <NavItem
-                key={item.label}
-                label={item.label}
-                href={item.href ?? null}
-                active={item.href !== undefined && item.href === activePath}
-              />
-            ))}
-          </nav>
-        </div>
-      ))}
-    </aside>
-  );
-}
+import { AppShell } from "../components/AppShell.js";
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
@@ -158,7 +62,7 @@ function VaultErrorPanel({ error }: { error: unknown }) {
 
 /**
  * ProjectsPage — /projects route.
- * Layout: Sidebar (248 px, co-located for S1) + Main area.
+ * Layout: AppShell (Sidebar 248 px) + Main area.
  * Fetches GET /api/projects via react-query and renders four states:
  *   loading → skeleton
  *   error   → vault-unreadable panel
@@ -181,13 +85,8 @@ export function ProjectsPage() {
   const projectCount = data?.projects.length ?? 0;
 
   return (
-    <div
-      className="flex min-h-screen"
-      style={{ background: "var(--bg)" }}
-    >
-      <Sidebar activePath={location.pathname} />
-
-      <main
+    <AppShell activePath={location.pathname}>
+      <div
         className="flex flex-col flex-1 min-w-0"
         style={{ padding: "32px", gap: "24px" }}
       >
@@ -253,7 +152,7 @@ export function ProjectsPage() {
             ))}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
