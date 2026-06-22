@@ -30,17 +30,21 @@ describe("DriftBadge — each DriftState renders the correct label", () => {
     expect(screen.getByText("up to date")).toBeTruthy();
   });
 
-  it('renders "behind" label for behind state (no versions)', () => {
+  it('renders base label only when null versions are present (no version hint appended)', () => {
+    // Uses "unknown" state because null versions are semantically valid there;
+    // "behind"/"ahead" require non-null versions per SCHEMA-FROZEN-S2 §1.
+    // This covers the buildLabel fallback path that returns the base label without a hint.
     render(
       <DriftBadge
         drift={makeDrift({
-          state: "behind",
+          state: "unknown",
           lock_version: null,
           vault_version: null,
+          registry_matches_lock: null,
         })}
       />,
     );
-    expect(screen.getByText("behind")).toBeTruthy();
+    expect(screen.getByText("unknown")).toBeTruthy();
   });
 
   it('renders "ahead" label for ahead state (no versions)', () => {

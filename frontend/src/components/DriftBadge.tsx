@@ -1,4 +1,4 @@
-import { Drift, DriftState } from "@kuraka-control/contracts";
+import type { Drift, DriftState } from "@kuraka-control/contracts";
 import { Badge, BadgeVariant } from "./Badge.js";
 
 // ── Display map ───────────────────────────────────────────────────────────────

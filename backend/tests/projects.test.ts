@@ -16,7 +16,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createApp } from "../src/index.js";
-import { ProjectListResponse } from "@kuraka-control/contracts";
+import { ProjectListResponse, ProjectDetail } from "@kuraka-control/contracts";
 
 /** Starts an Express app on a random OS-assigned port; returns { server, baseUrl }. */
 async function _startServer(
@@ -257,5 +257,318 @@ describe("GET /api/projects — vault unreadable", () => {
     // Assert
     expect(typeof body.error.message).toBe("string");
     expect(body.error.message.length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/:name — 200 with kuraka.lock present (up_to_date)
+// ---------------------------------------------------------------------------
+
+/** Writes a kuraka.lock with the given version into `projectDir`. */
+async function _writeLockFile(projectDir: string, version: string): Promise<void> {
+  await fs.writeFile(
+    path.join(projectDir, "kuraka.lock"),
+    `# kuraka.lock\nkuraka_version: "${version}"\nmounted_at: 2026-06-07\nvault: /some/path\n`,
+    "utf-8",
+  );
+}
+
+/** Writes a vault kuraka-init.py with DEFAULT_VERSION into `vaultDir`. */
+async function _writeInitPy(vaultDir: string, version: string): Promise<void> {
+  await fs.writeFile(
+    path.join(vaultDir, "kuraka-init.py"),
+    `DEFAULT_VERSION = "${version}"\nFRAMEWORK_NAME = "kuraka"\n`,
+    "utf-8",
+  );
+}
+
+describe("GET /api/projects/:name — 200 with kuraka.lock present", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    // Arrange — vault with one project whose path points to a temp dir that has a lock
+    await _setupVault(true, "kuraka-control");
+
+    // Create a separate temp dir to act as the project's local path on disk
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "kuraka-project-lock-"));
+    await _writeLockFile(projectDir, "0.3.4");
+    await _writeInitPy(tempVaultRoot, "0.3.4");
+
+    // Rewrite the project .md so its `path` points to projectDir
+    await fs.writeFile(
+      path.join(tempVaultRoot, "projects", "kuraka-control.md"),
+      `---
+name: kuraka-control
+path: ${projectDir}
+stack: node-express+react
+kuraka_version: "0.3.4"
+has_project_layer: true
+default_mode: normal
+status: active
+repo_url:
+focus_scope:
+last_mount: 2026-06-07
+last_sync:
+tags: []
+---
+
+# kuraka-control
+`,
+      "utf-8",
+    );
+
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  afterEach(async () => {
+    if (projectDir) await fs.rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("should return 200 for a registered project with a kuraka.lock", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+
+    // Assert
+    expect(response.status).toBe(200);
+  });
+
+  it("should return Content-Type application/json", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+
+    // Assert
+    expect(response.headers.get("content-type")).toMatch(/application\/json/);
+  });
+
+  it("should return a response that passes ProjectDetail zod validation", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+    const body = await response.json() as unknown;
+
+    // Assert — full contract shape check
+    const parsed = ProjectDetail.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) {
+      console.error("Zod errors:", parsed.error.issues);
+    }
+  });
+
+  it("should return drift.state 'up_to_date' when lock version equals vault version", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+    const body = await response.json() as { drift: { state: string } };
+
+    // Assert
+    expect(body.drift.state).toBe("up_to_date");
+  });
+
+  it("should return lock_version and vault_version matching the fixture values", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+    const body = await response.json() as {
+      drift: { lock_version: string; vault_version: string };
+    };
+
+    // Assert
+    expect(body.drift.lock_version).toBe("0.3.4");
+    expect(body.drift.vault_version).toBe("0.3.4");
+  });
+
+  it("should return registry_matches_lock true when lock version equals registry version", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+    const body = await response.json() as { drift: { registry_matches_lock: boolean } };
+
+    // Assert
+    expect(body.drift.registry_matches_lock).toBe(true);
+  });
+
+  it("should carry the project name and governance in the response", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/kuraka-control`);
+    const body = await response.json() as { name: string; governance: string };
+
+    // Assert
+    expect(body.name).toBe("kuraka-control");
+    expect(body.governance).toBe("project");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/:name — 200 with drift.state 'not_pinned' (no lock file)
+// ---------------------------------------------------------------------------
+
+describe("GET /api/projects/:name — 200 with drift.state not_pinned (no kuraka.lock)", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    // Arrange — vault with one project whose path has NO kuraka.lock
+    await _setupVault(true, "sie_v2");
+
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "kuraka-project-no-lock-"));
+    // Deliberately do NOT write a kuraka.lock in projectDir
+    await _writeInitPy(tempVaultRoot, "0.3.4");
+
+    await fs.writeFile(
+      path.join(tempVaultRoot, "projects", "sie_v2.md"),
+      `---
+name: sie_v2
+path: ${projectDir}
+stack: python-fastapi
+kuraka_version: "0.3.4"
+has_project_layer: true
+default_mode: normal
+status: active
+repo_url:
+focus_scope:
+last_mount: 2026-06-01
+last_sync:
+tags: []
+---
+
+# sie_v2
+`,
+      "utf-8",
+    );
+
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  afterEach(async () => {
+    if (projectDir) await fs.rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("should return 200 for a project without a kuraka.lock", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/sie_v2`);
+
+    // Assert
+    expect(response.status).toBe(200);
+  });
+
+  it("should return drift.state 'not_pinned' when no kuraka.lock is present", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/sie_v2`);
+    const body = await response.json() as { drift: { state: string } };
+
+    // Assert
+    expect(body.drift.state).toBe("not_pinned");
+  });
+
+  it("should return lock_version null and registry_matches_lock null when not_pinned", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/sie_v2`);
+    const body = await response.json() as {
+      drift: { lock_version: null; registry_matches_lock: null };
+    };
+
+    // Assert — nullability coherence biconditional from SCHEMA-FROZEN-S2.md §1
+    expect(body.drift.lock_version).toBeNull();
+    expect(body.drift.registry_matches_lock).toBeNull();
+  });
+
+  it("should pass ProjectDetail zod validation even when not_pinned", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/sie_v2`);
+    const body = await response.json() as unknown;
+
+    // Assert
+    const parsed = ProjectDetail.safeParse(body);
+    expect(parsed.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/:name — 404 NOT_FOUND for unregistered name
+// ---------------------------------------------------------------------------
+
+describe("GET /api/projects/:name — 404 for unregistered project name", () => {
+  beforeEach(async () => {
+    // Arrange — vault with one known project; we'll query an unregistered name
+    await _setupVault(true, "sie_v2");
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  it("should return 404 for a name that is not registered in the vault", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/nonexistent`);
+
+    // Assert
+    expect(response.status).toBe(404);
+  });
+
+  it("should return error.code NOT_FOUND in the response body", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/nonexistent`);
+    const body = await response.json() as { error: { code: string } };
+
+    // Assert
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("should include the project name in the error message", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/nonexistent`);
+    const body = await response.json() as { error: { message: string } };
+
+    // Assert
+    expect(body.error.message).toContain("nonexistent");
+  });
+
+  it("should include the name in error.detail", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/nonexistent`);
+    const body = await response.json() as { error: { detail: { name: string } } };
+
+    // Assert
+    expect(body.error.detail.name).toBe("nonexistent");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/projects/:name — path-separator and blank :name validation
+// ---------------------------------------------------------------------------
+
+describe("GET /api/projects/:name — path-separator and blank name rejected", () => {
+  beforeEach(async () => {
+    // Arrange — we need a running server; vault content doesn't matter for validation
+    await _setupVault(false);
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  it("should return 404 when :name contains a forward slash (path-separator injection)", async () => {
+    // Arrange — fetch URL-encodes '/' as '%2F'; the route receives the decoded value
+    // Express receives this as a separate path segment, so we test a name that is
+    // blank after the split (double-slash) or via URL-encoding.
+    // We URL-encode the slash so it reaches the handler as part of the param.
+    const response = await fetch(`${baseUrl}/api/projects/${encodeURIComponent("../../etc/passwd")}`);
+
+    // Assert — rejected before any fs access
+    expect(response.status).toBe(404);
+  });
+
+  it("should return error.code NOT_FOUND for a path-traversal attempt", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/${encodeURIComponent("../../etc/passwd")}`);
+    const body = await response.json() as { error: { code: string } };
+
+    // Assert
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("should return 404 when :name is all whitespace (blank name)", async () => {
+    // Arrange — URL-encode a space so it reaches the route handler
+    const response = await fetch(`${baseUrl}/api/projects/${encodeURIComponent("   ")}`);
+
+    // Assert
+    expect(response.status).toBe(404);
   });
 });
