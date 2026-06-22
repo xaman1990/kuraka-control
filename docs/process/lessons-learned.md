@@ -90,6 +90,44 @@ inline (ahorra tokens en cada invocación).
   que describa tipos TypeScript con lenguaje informal. La AC debe especificar
   el operador exacto (`?` vs `: T | null`).
 
+## LL-007 — Validate seeded/inherited contracts against live data before freezing
+
+- **REQ origen**: REQ-20260620-S1-registry-reader-projects
+- **Síntoma**: El contrato sembrado por arki tipaba `ProjectSummary.status` como
+  `z.enum([active,paused,onboarding,archived])`, pero el registro vivo contenía
+  `status: mapped`. Un parse estricto habría lanzado en día uno y el contrato lo
+  heredan S2–S4.
+- **Causa raíz**: arki adivinó el vocabulario de un campo cuyos valores los
+  posee una fuente externa (el vault), sin validar contra los datos reales.
+- **Regla que aplica**: `po-analyst` en GATE0 valida cualquier campo de contrato
+  que proyecte una fuente externa contra los datos vivos (lee N archivos reales,
+  cuenta la distribución de valores) ANTES de escribir el REQ. Si el contrato
+  sembrado contradice los datos vivos → BLOCKER, no se escribe el REQ hasta
+  resolver. El `architect-reviewer` re-verifica en el freeze.
+
+## LL-008 — Enum only fields the app owns; mirrored external fields use z.string()
+
+- **REQ origen**: REQ-20260620-S1-registry-reader-projects
+- **Síntoma**: `enums_for_states: true` empujó a sembrar un enum para un campo
+  (`status`) cuyo vocabulario es del vault, no de kuraka-control.
+- **Causa raíz**: Confusión entre estados que la app posee (la máquina de estados
+  del triage — SÍ enum) y un campo espejo de una fuente externa (NO enum).
+- **Regla que aplica**: arki y `story-refiner` aplican `enums_for_states` SOLO a
+  campos cuyos valores controla la app. Para campos espejo de una fuente externa
+  (frontmatter del vault, salida de scripts), usar `z.string()` (o una unión
+  abierta documentada) + mapeo de display conocido en la UI con fallback neutro.
+
+## LL-009 — Shared display-mapping constants are exported from their owner, never copied
+
+- **REQ origen**: REQ-20260620-S1-registry-reader-projects
+- **Síntoma**: `KNOWN_STATUS_VARIANT` (mapa status→variante de badge) quedó
+  duplicado entre componentes (IMPORTANT en Phase 5).
+- **Causa raíz**: El mapa se declaró más de una vez en vez de exportarse desde el
+  componente que lo posee.
+- **Regla que aplica**: `frontend-developer` declara cada mapa de variante/label
+  compartido UNA vez, exportado desde su componente dueño; los consumidores lo
+  importan. `code-reviewer` grepea el nombre de la constante para detectar copias.
+
 ---
 
 ## Formato para nuevas lecciones

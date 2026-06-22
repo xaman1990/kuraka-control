@@ -8,14 +8,22 @@ import { ProjectListResponse } from "@kuraka-control/contracts";
 import { listProjects } from "../repositories/projectRegistry.js";
 import { env } from "../config/env.js";
 
+export interface GetProjectListOptions {
+  vaultRoot?: string;
+}
+
 /**
  * Returns all registered projects from the vault registry.
  *
+ * @param options.vaultRoot — vault root override for tests (defaults to env.vaultRoot).
  * @throws {VaultUnreadableError} propagated from the repository when the vault
  *   projects directory is missing or unreadable.
  */
-export async function getProjectList(): Promise<ProjectListResponse> {
-  const projects = await listProjects({ vaultRoot: env.vaultRoot });
+export async function getProjectList(
+  options: GetProjectListOptions = {},
+): Promise<ProjectListResponse> {
+  const vaultRoot = options.vaultRoot ?? env.vaultRoot;
+  const projects = await listProjects({ vaultRoot });
 
   return {
     projects,

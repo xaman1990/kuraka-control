@@ -12,58 +12,16 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
-import express from "express";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-
-// ---------------------------------------------------------------------------
-// We build a self-contained Express app that wires the real projectsRouter,
-// but calls a factory that accepts an injected vaultRoot instead of reading
-// from process.env (which is module-cached before our test runs).
-//
-// Strategy: import the router factory-style by constructing a fresh router
-// for each test with a local vaultRoot. We reuse the actual route + service
-// + repository code paths by recreating the full stack inline.
-// ---------------------------------------------------------------------------
-
-import { Router } from "express";
-import type { Request, Response } from "express";
-import { listProjects, VaultUnreadableError } from "../src/repositories/projectRegistry.js";
+import { createApp } from "../src/index.js";
 import { ProjectListResponse } from "@kuraka-control/contracts";
 
-/** Builds a fresh Express app that serves GET /api/projects using the given vault root. */
-function _makeApp(vaultRoot: string): express.Express {
-  const app = express();
-  app.use(express.json());
-
-  const router = Router();
-  router.get("/projects", async (_req: Request, res: Response) => {
-    try {
-      const projects = await listProjects({ vaultRoot });
-      const payload: ProjectListResponse = { projects, empty: projects.length === 0 };
-      res.json(payload);
-    } catch (err) {
-      if (err instanceof VaultUnreadableError) {
-        res.status(500).json({
-          error: {
-            code: "VAULT_UNREADABLE",
-            message: "Cannot read the Kuraka vault",
-            detail: { path: err.vaultPath },
-          },
-        });
-        return;
-      }
-      throw err;
-    }
-  });
-
-  app.use("/api", router);
-  return app;
-}
-
 /** Starts an Express app on a random OS-assigned port; returns { server, baseUrl }. */
-async function _startServer(app: express.Express): Promise<{ server: http.Server; baseUrl: string }> {
+async function _startServer(
+  app: ReturnType<typeof createApp>,
+): Promise<{ server: http.Server; baseUrl: string }> {
   return new Promise((resolve) => {
     const server = http.createServer(app);
     server.listen(0, "127.0.0.1", () => {
@@ -139,7 +97,7 @@ async function _setupVault(withProjectsMd: boolean, projectName?: string): Promi
 describe("GET /api/projects — populated vault", () => {
   beforeEach(async () => {
     await _setupVault(true, "sie_v2");
-    const started = await _startServer(_makeApp(tempVaultRoot));
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
     server = started.server;
     baseUrl = started.baseUrl;
   });
@@ -204,7 +162,7 @@ describe("GET /api/projects — populated vault", () => {
 describe("GET /api/projects — empty vault", () => {
   beforeEach(async () => {
     await _setupVault(false); // no .md files
-    const started = await _startServer(_makeApp(tempVaultRoot));
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
     server = started.server;
     baseUrl = started.baseUrl;
   });
@@ -244,7 +202,7 @@ describe("GET /api/projects — vault unreadable", () => {
       os.tmpdir(),
       "kuraka-integration-missing-" + Date.now(),
     );
-    const started = await _startServer(_makeApp(nonExistentVault));
+    const started = await _startServer(createApp({ vaultRoot: nonExistentVault }));
     server = started.server;
     baseUrl = started.baseUrl;
 
@@ -267,7 +225,7 @@ describe("GET /api/projects — vault unreadable", () => {
       os.tmpdir(),
       "kuraka-integration-missing-path-" + Date.now(),
     );
-    const started = await _startServer(_makeApp(nonExistentVault));
+    const started = await _startServer(createApp({ vaultRoot: nonExistentVault }));
     server = started.server;
     baseUrl = started.baseUrl;
 
@@ -288,7 +246,7 @@ describe("GET /api/projects — vault unreadable", () => {
       os.tmpdir(),
       "kuraka-integration-msg-" + Date.now(),
     );
-    const started = await _startServer(_makeApp(nonExistentVault));
+    const started = await _startServer(createApp({ vaultRoot: nonExistentVault }));
     server = started.server;
     baseUrl = started.baseUrl;
 
