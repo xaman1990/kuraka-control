@@ -10,7 +10,7 @@
  */
 import type { ProjectDetail } from "@kuraka-control/contracts";
 import { env } from "../config/env.js";
-import { findProjectByName, readLockVersion, readVaultVersion } from "../repositories/projectReader.js";
+import { findProjectByName, readLockVersion, readProjectConfig, readVaultVersion } from "../repositories/projectReader.js";
 import { computeDrift } from "../domain/drift.js";
 
 export interface GetProjectDetailOptions {
@@ -33,10 +33,11 @@ export async function getProjectDetail(
   const summary = await findProjectByName(name, { vaultRoot });
   if (summary === null) return "NOT_FOUND";
 
-  // Read lock and vault version in parallel — neither throws.
-  const [lock_version, vault_version] = await Promise.all([
+  // Read lock, vault version, and project config in parallel — none throws.
+  const [lock_version, vault_version, config] = await Promise.all([
     readLockVersion(summary.path),
     readVaultVersion(vaultRoot),
+    readProjectConfig(summary.path),   // S3 addition; never throws; null = absent/malformed
   ]);
 
   const state = computeDrift(lock_version, vault_version);
@@ -53,5 +54,5 @@ export async function getProjectDetail(
     registry_matches_lock,
   };
 
-  return { ...summary, drift };
+  return { ...summary, drift, config };
 }

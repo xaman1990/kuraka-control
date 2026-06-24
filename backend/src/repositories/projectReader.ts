@@ -16,7 +16,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import yaml from "yaml";
 import { listProjects } from "./projectRegistry.js";
-import type { ProjectSummary } from "@kuraka-control/contracts";
+import type { ProjectConfig, ProjectSummary } from "@kuraka-control/contracts";
+import { curateProjectConfig } from "../domain/projectConfig.js";
 
 /** Anchored regex to extract DEFAULT_VERSION from kuraka-init.py (FROZEN). */
 const DEFAULT_VERSION_RE = /^DEFAULT_VERSION\s*=\s*["']([^"']+)["']/m;
@@ -59,6 +60,37 @@ export async function readLockVersion(projectPath: string): Promise<string | nul
     if (value === undefined || value === null || value === "") return null;
     // Coerce to string: a two-dot value like 0.3 parses as a float in YAML
     return String(value);
+  } catch {
+    // Covers ENOENT, EACCES, YAML parse errors — all collapse to null
+    return null;
+  }
+}
+
+/**
+ * Reads <projectPath>/kuraka.config.yaml and curates it into a ProjectConfig.
+ * Returns null on: file absent (ENOENT), permission error (EACCES), YAML parse
+ * failure, or parsed value not a plain object — via try/catch, never throws.
+ *
+ * Mirrors readLockVersion exactly in its degrade pattern. The curation is
+ * delegated to curateProjectConfig (pure domain fn — no fs, no env).
+ *
+ * Security: projectPath comes from the registry's trusted `path` field;
+ * never interpolated from the request :name param. Read-only — no writes,
+ * no subprocesses. (SCHEMA-FROZEN-S3.md §4)
+ */
+export async function readProjectConfig(projectPath: string): Promise<ProjectConfig | null> {
+  const configPath = path.join(projectPath, "kuraka.config.yaml");
+  try {
+    const content = await fs.readFile(configPath, "utf-8");
+    const parsed = yaml.parse(content) as unknown;
+    if (
+      parsed === null ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)
+    ) {
+      return null;
+    }
+    return curateProjectConfig(parsed);
   } catch {
     // Covers ENOENT, EACCES, YAML parse errors — all collapse to null
     return null;

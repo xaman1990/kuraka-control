@@ -1,10 +1,11 @@
 /**
- * Unit tests for getProjectDetail service (AC-37).
+ * Unit tests for getProjectDetail service (AC-37, S3 addition).
  *
- * Mocks the three repository dependencies (findProjectByName, readLockVersion,
- * readVaultVersion) at the vitest module level. Verifies that all 5 drift
- * states are assembled correctly into ProjectDetail, that "NOT_FOUND" is
- * returned for unknown names, and that registry_matches_lock semantics hold.
+ * Mocks the four repository dependencies (findProjectByName, readLockVersion,
+ * readVaultVersion, readProjectConfig) at the vitest module level. Verifies
+ * that all 5 drift states are assembled correctly into ProjectDetail, that
+ * "NOT_FOUND" is returned for unknown names, registry_matches_lock semantics
+ * hold, and that config (ProjectConfig | null) flows through correctly (S3).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ProjectSummary } from "@kuraka-control/contracts";
@@ -15,12 +16,14 @@ vi.mock("../repositories/projectReader.js", () => ({
   findProjectByName: vi.fn(),
   readLockVersion: vi.fn(),
   readVaultVersion: vi.fn(),
+  readProjectConfig: vi.fn(),
 }));
 
 import { getProjectDetail } from "./projectDetail.js";
 import {
   findProjectByName,
   readLockVersion,
+  readProjectConfig,
   readVaultVersion,
 } from "../repositories/projectReader.js";
 
@@ -31,6 +34,7 @@ import {
 const mockFindProjectByName = vi.mocked(findProjectByName);
 const mockReadLockVersion = vi.mocked(readLockVersion);
 const mockReadVaultVersion = vi.mocked(readVaultVersion);
+const mockReadProjectConfig = vi.mocked(readProjectConfig);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -57,6 +61,9 @@ function _makeProjectSummary(overrides: Partial<ProjectSummary> = {}): ProjectSu
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Default config to null — first-class absent state (SCHEMA-FROZEN-S3.md §3).
+  // Individual tests override when they need a populated config.
+  mockReadProjectConfig.mockResolvedValue(null);
 });
 
 // ---------------------------------------------------------------------------
@@ -345,6 +352,70 @@ describe("getProjectDetail — ProjectDetail shape (summary fields preserved)", 
     const result = await getProjectDetail("kuraka-control", { vaultRoot: "/fake/vault" });
 
     // Assert
+    const parsed = ProjectDetail.safeParse(result);
+    expect(parsed.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S3: config field — populated when file present; null when absent (B6, B7)
+// ---------------------------------------------------------------------------
+
+describe("getProjectDetail — S3 config field", () => {
+  it("should include config: null when readProjectConfig returns null (absent file)", async () => {
+    // Arrange
+    const summary = _makeProjectSummary();
+    mockFindProjectByName.mockResolvedValue(summary);
+    mockReadLockVersion.mockResolvedValue(null);
+    mockReadVaultVersion.mockResolvedValue("0.3.4");
+    mockReadProjectConfig.mockResolvedValue(null);
+
+    // Act
+    const result = await getProjectDetail("kuraka-control", { vaultRoot: "/fake/vault" });
+
+    // Assert — config: null is first-class; response is still 200-shaped ProjectDetail
+    expect(result).not.toBe("NOT_FOUND");
+    if (result === "NOT_FOUND") return;
+    expect(result.config).toBeNull();
+    const parsed = ProjectDetail.safeParse(result);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("should include config: ProjectConfig object when readProjectConfig returns a curated config", async () => {
+    // Arrange
+    const summary = _makeProjectSummary();
+    mockFindProjectByName.mockResolvedValue(summary);
+    mockReadLockVersion.mockResolvedValue("0.3.4");
+    mockReadVaultVersion.mockResolvedValue("0.3.4");
+    mockReadProjectConfig.mockResolvedValue({
+      backend_language: "typescript",
+      backend_framework: "express",
+      frontend_language: "typescript",
+      frontend_framework: "react",
+      architecture_layers: ["domain", "repository", "service", "route"],
+      state_mgmt: "zustand",
+      naming_language: "english",
+      max_file_loc: 400,
+      max_function_loc: 50,
+      default_mode: "normal",
+    });
+
+    // Act
+    const result = await getProjectDetail("kuraka-control", { vaultRoot: "/fake/vault" });
+
+    // Assert — all 10 config fields present; zod validates full ProjectDetail
+    expect(result).not.toBe("NOT_FOUND");
+    if (result === "NOT_FOUND") return;
+    expect(result.config).not.toBeNull();
+    expect(result.config?.backend_language).toBe("typescript");
+    expect(result.config?.backend_framework).toBe("express");
+    expect(result.config?.max_file_loc).toBe(400);
+    expect(result.config?.architecture_layers).toEqual([
+      "domain",
+      "repository",
+      "service",
+      "route",
+    ]);
     const parsed = ProjectDetail.safeParse(result);
     expect(parsed.success).toBe(true);
   });

@@ -99,8 +99,30 @@ export const Drift = z.object({
 });
 export type Drift = z.infer<typeof Drift>;
 
-/** Detail = the frozen summary + computed drift. Composition, NOT redefinition. */
+// ---- S3: Project Config projection ----------------------------------------------
+
+/** Curated projection of <project>/kuraka.config.yaml (S3).
+ *  Every VALUE field mirrors an EXTERNALLY-OWNED vocabulary → z.string()/z.number(),
+ *  ALL nullable. NO z.enum (LL-008). architecture_layers defaults to [] (never null).
+ *  The raw parse is NOT validated strictly: unknown keys are curated away & ignored. */
+export const ProjectConfig = z.object({
+  backend_language: z.string().nullable(),   // stack.backend.language
+  backend_framework: z.string().nullable(),  // stack.backend.framework
+  frontend_language: z.string().nullable(),  // stack.frontend.language
+  frontend_framework: z.string().nullable(), // stack.frontend.framework
+  architecture_layers: z.array(z.string()),  // architecture.layers — [] when absent/empty/not-an-array
+  state_mgmt: z.string().nullable(),         // stack.frontend.state_mgmt
+  naming_language: z.string().nullable(),    // conventions.naming_language
+  max_file_loc: z.number().nullable(),       // conventions.max_file_loc
+  max_function_loc: z.number().nullable(),   // conventions.max_function_loc
+  default_mode: z.string().nullable(),       // workflow.default_mode
+});
+export type ProjectConfig = z.infer<typeof ProjectConfig>;
+
+/** Detail = frozen summary + S2 drift + S3 config. Composition, NOT redefinition.
+ *  drift FROZEN by SCHEMA-FROZEN-S2 — unchanged. */
 export const ProjectDetail = ProjectSummary.extend({
-  drift: Drift,
+  drift: Drift,                      // FROZEN by SCHEMA-FROZEN-S2 — unchanged
+  config: ProjectConfig.nullable(),  // null = no/unreadable/malformed config file
 });
 export type ProjectDetail = z.infer<typeof ProjectDetail>;
