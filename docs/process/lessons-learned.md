@@ -128,6 +128,24 @@ inline (ahorra tokens en cada invocación).
   compartido UNA vez, exportado desde su componente dueño; los consumidores lo
   importan. `code-reviewer` grepea el nombre de la constante para detectar copias.
 
+## LL-010 — Run the GATE0 live-data validation proactively, before writing the REQ
+
+- **REQ origen**: REQ-20260622-S2-project-detail-drift
+- **Síntoma (positivo)**: LL-007 evitó un crash en S1 pero *de forma reactiva*:
+  GATE0 encontró la contradicción y BLOQUEÓ, forzando un re-pase de po-analyst
+  (~40K tokens desperdiciados). En S2, la misma validación corrida *antes* de
+  redactar el REQ (verificar los 8 locks en disco, el registro y el
+  DEFAULT_VERSION del vault) produjo GATE0 PASS en un solo pase, sin doble-pase.
+- **Causa raíz**: LL-007 estaba redactada como "valida y BLOQUEA si hay
+  contradicción" — un disparador reactivo. El mayor valor es correr la validación
+  proactivamente como pre-vuelo, convirtiendo un posible BLOCKED en un PASS limpio.
+- **Regla que aplica**: `po-analyst` corre la validación contra datos vivos de
+  CUALQUIER campo de contrato que proyecte una fuente externa (vault, locks,
+  salida de scripts) como PRIMER paso de la Fase 1, ANTES de redactar el REQ —
+  no como reacción a una sospecha. Documenta la distribución observada y resuelve
+  ambigüedades con decisiones recomendadas en el REQ. Esto convierte el chequeo
+  de LL-007 de "red de seguridad" en "pre-vuelo", ahorrando el doble-pase.
+
 ---
 
 ## Formato para nuevas lecciones
