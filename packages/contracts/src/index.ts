@@ -126,3 +126,45 @@ export const ProjectDetail = ProjectSummary.extend({
   config: ProjectConfig.nullable(),  // null = no/unreadable/malformed config file
 });
 export type ProjectDetail = z.infer<typeof ProjectDetail>;
+
+// ---- S4: Project Layer tree + file-read -------------------------------------
+
+/** Recursive layer tree node. z.lazy is REQUIRED for the self-reference;
+ *  an explicit type annotation (LayerNodeShape) is REQUIRED for z.lazy. */
+export type LayerNodeShape = {
+  name: string;
+  type: "dir" | "file";
+  rel_path: string;
+  size_bytes: number | null;
+  children?: LayerNodeShape[];
+};
+
+export const LayerNode: z.ZodType<LayerNodeShape> = z.lazy(() =>
+  z.object({
+    name: z.string(),                        // basename, externally-owned → z.string()
+    type: z.enum(["dir", "file"]),           // APP-DERIVED discriminator — the ONLY enum (LL-008)
+    rel_path: z.string(),                    // POSIX rel path under the layer root
+    size_bytes: z.number().nullable(),       // file: stat.size; dir: null
+    children: z.array(LayerNode).optional(), // present iff type === "dir"
+  }),
+);
+
+export const LayerTreeResponse = z.object({
+  has_layer: z.boolean(),                    // computed from LIVE dir stat, NOT registry flag
+  root_rel: z.string(),                      // constant ".claude/project"
+  nodes: z.array(LayerNode),                 // [] when dir absent OR empty
+  empty: z.boolean(),                        // true ⇔ has_layer && nodes.length === 0
+  truncated: z.boolean(),                    // true ⇔ MAX_DEPTH or MAX_ENTRIES cap hit
+});
+export type LayerTreeResponse = z.infer<typeof LayerTreeResponse>;
+
+export const LayerFileResponse = z.object({
+  rel_path: z.string(),                      // echo of the VALIDATED rel (never the abs path)
+  name: z.string(),                          // basename
+  content: z.string().nullable(),            // null ⇔ too_large || binary
+  size_bytes: z.number(),                    // actual stat.size on disk
+  truncated: z.boolean(),                    // reserved; v1 ALWAYS false
+  too_large: z.boolean(),                    // true ⇔ size_bytes > LAYER_FILE_MAX_BYTES
+  binary: z.boolean(),                       // true ⇔ NUL byte in first BINARY_SAMPLE_BYTES
+});
+export type LayerFileResponse = z.infer<typeof LayerFileResponse>;
