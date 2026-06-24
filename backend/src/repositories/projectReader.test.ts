@@ -1,16 +1,18 @@
 /**
- * Unit tests for projectReader repository (AC-36).
+ * Unit tests for projectReader repository (AC-36, S3 addition).
  *
  * Uses real temp dirs (node:fs/promises + node:os.tmpdir) — no mocks.
  * Covers: readLockVersion (valid lock, absent file, malformed YAML, missing field,
  * numeric coercion), readVaultVersion (valid init.py, absent file, no constant,
- * never executes), and findProjectByName (found, not found).
+ * never executes), findProjectByName (found, not found), and readProjectConfig
+ * (valid YAML → curated ProjectConfig, absent file → null, malformed YAML → null,
+ * non-object YAML → null) — S3 addition (T2).
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { readLockVersion, readVaultVersion, findProjectByName } from "./projectReader.js";
+import { readLockVersion, readVaultVersion, findProjectByName, readProjectConfig } from "./projectReader.js";
 
 // ---------------------------------------------------------------------------
 // Temp dir lifecycle
@@ -391,5 +393,187 @@ describe("findProjectByName — name not in registry returns null", () => {
 
     // Assert
     expect(result).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// readProjectConfig — S3 addition (T2)
+// Mirrors the readLockVersion temp-dir style (SCHEMA-FROZEN-S3.md §5).
+// ---------------------------------------------------------------------------
+
+/** Writes a kuraka.config.yaml file to `dir`. */
+async function _writeConfigYaml(dir: string, content: string): Promise<void> {
+  await fs.writeFile(path.join(dir, "kuraka.config.yaml"), content, "utf-8");
+}
+
+/**
+ * A realistic kuraka-control-shaped kuraka.config.yaml.
+ * All 10 curated fields present with their live values.
+ */
+function _validConfigYamlContent(): string {
+  return `# kuraka.config.yaml — kuraka-control (realistic fixture)
+name: kuraka-control
+description: Local control plane for the Kuraka multi-agent framework.
+
+stack:
+  backend:
+    language: typescript
+    framework: express
+  frontend:
+    language: typescript
+    framework: react
+    state_mgmt: zustand
+
+architecture:
+  layers:
+    - domain
+    - repository
+    - service
+    - route
+
+conventions:
+  naming_language: english
+  max_file_loc: 400
+  max_function_loc: 50
+
+workflow:
+  default_mode: normal
+`;
+}
+
+describe("readProjectConfig — valid kuraka.config.yaml → populated ProjectConfig", () => {
+  it("should return a populated ProjectConfig with all 10 fields when the file is valid YAML", async () => {
+    // Arrange
+    await _writeConfigYaml(tempDir, _validConfigYamlContent());
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert — non-null and all curated fields populated
+    expect(result).not.toBeNull();
+    expect(result?.backend_language).toBe("typescript");
+    expect(result?.backend_framework).toBe("express");
+    expect(result?.frontend_language).toBe("typescript");
+    expect(result?.frontend_framework).toBe("react");
+    expect(result?.state_mgmt).toBe("zustand");
+    expect(result?.architecture_layers).toEqual(["domain", "repository", "service", "route"]);
+    expect(result?.naming_language).toBe("english");
+    expect(result?.max_file_loc).toBe(400);
+    expect(result?.max_function_loc).toBe(50);
+    expect(result?.default_mode).toBe("normal");
+  });
+
+  it("should return a result that passes ProjectConfig zod validation", async () => {
+    // Arrange
+    await _writeConfigYaml(tempDir, _validConfigYamlContent());
+    const { ProjectConfig } = await import("@kuraka-control/contracts");
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert — the curated output must satisfy the frozen zod shape
+    expect(result).not.toBeNull();
+    const parsed = ProjectConfig.safeParse(result);
+    expect(parsed.success).toBe(true);
+  });
+
+  it("should not throw for a valid kuraka.config.yaml file", async () => {
+    // Arrange
+    await _writeConfigYaml(tempDir, _validConfigYamlContent());
+
+    // Act / Assert
+    await expect(readProjectConfig(tempDir)).resolves.not.toBeNull();
+  });
+});
+
+describe("readProjectConfig — absent file → null (config-absent rule, SCHEMA-FROZEN-S3.md §3)", () => {
+  it("should return null when kuraka.config.yaml does not exist in the given dir", async () => {
+    // Arrange — no config file written
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert
+    expect(result).toBeNull();
+  });
+
+  it("should not throw when kuraka.config.yaml is absent", async () => {
+    // Arrange / Act / Assert
+    await expect(readProjectConfig(tempDir)).resolves.toBeNull();
+  });
+});
+
+describe("readProjectConfig — malformed YAML → null (never throws)", () => {
+  it("should return null when the config file contains an unclosed flow sequence (parse error)", async () => {
+    // Arrange — `[unclosed` causes the yaml library to throw a parse error
+    await _writeConfigYaml(tempDir, "stack:\n  backend:\n    language: [unclosed");
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert
+    expect(result).toBeNull();
+  });
+
+  it("should not throw when the config file contains malformed YAML", async () => {
+    // Arrange — tab indentation is illegal in YAML and causes the yaml library to throw
+    await _writeConfigYaml(tempDir, "stack:\n\tbackend: foo");
+
+    // Act / Assert
+    await expect(readProjectConfig(tempDir)).resolves.toBeNull();
+  });
+
+  it("should return null when the config YAML has duplicate map keys (parse error)", async () => {
+    // Arrange — the yaml library rejects duplicate keys by default
+    await _writeConfigYaml(tempDir, "stack: foo\nstack: bar\n");
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert
+    expect(result).toBeNull();
+  });
+});
+
+describe("readProjectConfig — non-object YAML → null (config-absent rule §3)", () => {
+  it("should return null when the YAML file parses to a bare string scalar", async () => {
+    // Arrange — valid YAML but a scalar, not a mapping
+    await _writeConfigYaml(tempDir, "just a plain string");
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert
+    expect(result).toBeNull();
+  });
+
+  it("should return null when the YAML file parses to a bare array", async () => {
+    // Arrange — valid YAML but a sequence, not a mapping
+    await _writeConfigYaml(tempDir, "- item1\n- item2\n");
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert
+    expect(result).toBeNull();
+  });
+
+  it("should return null when the YAML file parses to a bare number", async () => {
+    // Arrange
+    await _writeConfigYaml(tempDir, "42");
+
+    // Act
+    const result = await readProjectConfig(tempDir);
+
+    // Assert
+    expect(result).toBeNull();
+  });
+
+  it("should not throw for any non-object YAML variant", async () => {
+    // Arrange
+    await _writeConfigYaml(tempDir, "- item1\n- item2\n");
+
+    // Act / Assert
+    await expect(readProjectConfig(tempDir)).resolves.toBeNull();
   });
 });

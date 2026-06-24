@@ -2,11 +2,6 @@ import { ProjectConfig } from "@kuraka-control/contracts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Renders a muted dash for absent values — never displays "null" or blank. */
-function dash(): string {
-  return "—";
-}
-
 function joinStack(lang: string | null, framework: string | null): string | null {
   const parts = [lang, framework].filter((p): p is string => p !== null);
   if (parts.length === 0) return null;
@@ -191,7 +186,7 @@ export function ConfigCard({ config }: ConfigCardProps) {
           className="text-xs"
           style={{ color: "var(--text-3)", paddingTop: "8px" }}
         >
-          {dash()} No config fields found
+          {"—"} No config fields found
         </p>
       )}
     </div>
