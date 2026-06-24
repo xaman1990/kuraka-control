@@ -146,6 +146,28 @@ inline (ahorra tokens en cada invocación).
   ambigüedades con decisiones recomendadas en el REQ. Esto convierte el chequeo
   de LL-007 de "red de seguridad" en "pre-vuelo", ahorrando el doble-pase.
 
+## LL-011 — Stories must state the exact *mechanism* of a parse/compare/curate step, not hedge it
+
+- **REQ origen**: REQ-20260622-S2-project-detail-drift (lock-parse / version-compare)
+  y REQ-20260622-S3-project-config-tab (type-strict reject-vs-coerce de la curación)
+- **Síntoma**: La story dejó la *mecánica* de un paso (cómo parsear el lock —
+  yaml vs JSON; cómo comparar versiones — segmento-a-segmento vs string; cómo
+  curar un slot type-strict — rechazar a `null` vs `String(value)`/coerción)
+  como una "Technical Note" en prosa, no como una decisión resuelta. Cada caso
+  salió como un MINOR del `architect-reviewer` (S2: 2 MINORs; S3: 1 MINOR),
+  resuelto dentro del freeze sin retrabajo, pero repetido en 2 ciclos.
+- **Causa raíz**: LL-006 obliga a especificar la *sintaxis* exacta de un tipo
+  TypeScript (`?` vs `: T | null`), pero no cubría la *mecánica de un algoritmo*
+  (parse/compare/curación). El refinador dejó la elección implícita asumiendo que
+  el implementador "haría lo razonable".
+- **Regla que aplica**: `story-refiner` —y `po-analyst` en modo combinado T3—
+  cuando una AC nombra un paso de parse/compare/curación con más de una
+  implementación razonable (yaml vs JSON; comparación numérica vs string;
+  rechazo type-strict vs coerción; orden de igualdad/empate), declara la
+  decisión resuelta en la AC (una línea), no una nota hedge. El
+  `architect-reviewer` deja de gastar un MINOR en re-resolverla; el freeze solo
+  la confirma.
+
 ---
 
 ## Formato para nuevas lecciones

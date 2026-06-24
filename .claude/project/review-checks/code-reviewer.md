@@ -27,3 +27,8 @@ grow from retros.
 ## 5. Layering
 - [ ] Routes don't touch fs/subprocess directly; only repositories do I/O.
 - [ ] `domain/` is pure (no fs/spawn/env).
+
+## 6. Frontend design tokens
+- [ ] Every CSS custom property a component references (`var(--x)`) is defined in
+      `frontend/src/theme/tokens.css` — a `var(--x, fallback)` silently relying on the
+      fallback because `--x` is undefined is a token-hygiene gap (MINOR). [S3 `--radius-card`]
