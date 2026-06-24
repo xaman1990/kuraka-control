@@ -5,6 +5,7 @@ import { fetchProjectDetail, NotFoundError } from "../api/projectDetail.js";
 import { AppShell } from "../components/AppShell.js";
 import { GovernanceBadge } from "../components/GovernanceBadge.js";
 import { DriftBadge } from "../components/DriftBadge.js";
+import { ConfigCard } from "../components/ConfigCard.js";
 
 // ── Inert action buttons (S7) ─────────────────────────────────────────────────
 
@@ -217,6 +218,8 @@ export function ProjectDetailShell() {
           style={{ padding: "32px", gap: "22px" }}
         >
           <DetailHeader project={data} />
+          {/* Config tab content (S3) — other tabs inert until S4+ */}
+          <ConfigCard config={data.config} />
         </div>
       )}
     </AppShell>
