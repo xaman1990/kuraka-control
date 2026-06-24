@@ -168,6 +168,30 @@ inline (ahorra tokens en cada invocación).
   `architect-reviewer` deja de gastar un MINOR en re-resolverla; el freeze solo
   la confirma.
 
+## LL-012 — Un walk del filesystem que clasifica entradas DEBE especificar el manejo de symlinks: los bits de tipo del dirent son insuficientes
+
+- **REQ origen**: REQ-20260624-S4-project-layer-browser (walkLayerTree)
+- **Síntoma**: En Node 22 un dirent de symlink reporta `isFile() === false &&
+  isDirectory() === false`. El tree-walk clasificaba por los bits de tipo del
+  dirent con dos predicados (uno para archivos, uno para dirs); un symlink no fue
+  reclamado como entrada normal por ninguno y terminó **emitido dos veces**
+  (BLOCKER de Phase 5, primer BLOCKER desde S1). No es un bug de seguridad
+  (la contención del resolver estaba intacta) — es un bug de *correctitud* en el
+  camino de *display*.
+- **Causa raíz**: LL-011 obliga a declarar el *mecanismo* cuando un paso tiene
+  >1 implementación razonable, pero el fork aquí era **no obvio**: requería saber
+  un hecho de plataforma (la semántica del dirent de symlink en Node moderno) para
+  siquiera ver la bifurcación. El freeze pinneó el mecanismo de *contención*
+  (resolver, Steps 3–4 realpath) al byte, pero dejó la *clasificación del walk*
+  sin mecanismo explícito.
+- **Regla que aplica**: cuando una story/freeze describe un **walk del filesystem
+  que clasifica entradas** (archivo vs dir vs symlink), `story-refiner` /
+  `architect-reviewer` declaran que la clasificación se hace por **`stat`/`lstat`
+  explícito, NUNCA por los bits de tipo del dirent** para symlinks, y fijan la
+  política de symlink-dir (seguir / no seguir) y de symlink-file en el freeze.
+  El `code-reviewer` verifica que ningún dirent de symlink caiga entre dos
+  predicados de filtro (doble-emisión / omisión).
+
 ---
 
 ## Formato para nuevas lecciones

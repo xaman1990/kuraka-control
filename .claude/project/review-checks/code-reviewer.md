@@ -32,3 +32,9 @@ grow from retros.
 - [ ] Every CSS custom property a component references (`var(--x)`) is defined in
       `frontend/src/theme/tokens.css` — a `var(--x, fallback)` silently relying on the
       fallback because `--x` is undefined is a token-hygiene gap (MINOR). [S3 `--radius-card`]
+
+## 7. Filesystem walks (symlink classification) [LL-012]
+- [ ] An fs-walk that classifies entries (file vs dir) resolves symlinks via explicit
+      `stat`/`lstat`, NEVER via dirent type bits — on modern Node a symlink dirent reports
+      `isFile()===false && isDirectory()===false`, so a two-predicate filter double-emits or
+      drops it. Confirm no dirent can match both/neither classification branch. [S4 `walkLayerTree`]

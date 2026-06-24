@@ -1,7 +1,7 @@
 # Kuraka Telemetry Dashboard
 
-_Updated: 2026-06-24 (hand-rolled after S3; per-cycle JSON is gitignored)_
-_Cycles analyzed: 4_
+_Updated: 2026-06-24 (hand-rolled after S4; per-cycle JSON is gitignored)_
+_Cycles analyzed: 5_
 
 ## Cycles
 
@@ -11,41 +11,45 @@ _Cycles analyzed: 4_
 | REQ-20260620-S1-registry-reader-projects | normal (risk-reduced) | 9 | 463,505 | 270 | ~46.5min wall |
 | REQ-20260622-S2-project-detail-drift | normal (risk-reduced) | 7 | 450,445 | ~235 | ~28min wall |
 | REQ-20260622-S3-project-config-tab | reduced (T3 combined 1+2) | 6 | 390,373 | ~180 | ~33min wall |
+| REQ-20260624-S4-project-layer-browser | normal full + 5.5 Security | 10 | 688,437 | ~266 | ~58min wall |
 
-**Token trend (real feature cycles): S1 463K → S2 450K → S3 390K** — monotonically down as the
-pattern library + lessons compound (S3 reused S2's reader/compose pattern; T3 combined 1+2 saved ~22–45K).
+**Token trend: S1 463K → S2 450K → S3 390K → S4 688K.** S4 is the first cycle UP — **scope, not
+regression**: complexity L + a dedicated 5.5 security subagent + a real BLOCKER fix loop (10 runs vs 6).
+Per-run tokens stayed in-band.
 
-## Per-agent aggregate (S12 + S1 + S2 + S3)
+## Per-agent aggregate (S12 + S1 + S2 + S3 + S4)
 
 | Agent | Invocations | Total tokens |
 |-------|------------:|-------------:|
-| frontend-developer | 8 | 317,659 |
-| code-reviewer | 4 | 267,014 |
-| final-auditor | 3 | 230,283 |
-| po-analyst | 5 | 228,711 |
-| test-engineer | 3 | 190,864 |
-| backend-developer | 4 | 179,095 |
-| architect-reviewer | 3 | 167,853 |
-| story-refiner | 2 | 99,481 |
+| frontend-developer | 10 | 437,913 |
+| code-reviewer | 5 | 355,364 |
+| final-auditor | 4 | 332,641 |
+| backend-developer | 6 | 286,398 |
+| po-analyst | 6 | 283,664 |
+| test-engineer | 4 | 280,892 |
+| architect-reviewer | 4 | 242,687 |
+| story-refiner | 3 | 156,189 |
+| security-reviewer | 1 | 62,862 |
 
 ## Totals
 
-- Total tokens (4 cycles): **1,450,677**
-- Cycles: **4**
-- Avg tokens per cycle: **362,669**
+- Total tokens (5 cycles): **2,139,114**
+- Cycles: **5**
+- Avg tokens per cycle: **427,823**
 
 ## Notes
 
-- **3 consecutive clean cycles (S1→S2→S3)**: each later cycle had fewer/no rework loops. S3
-  was the first to use T3 (combined Phase 1+2) and the first to reuse the prior cycle's
-  implementation pattern (`readProjectConfig` ≅ `readLockVersion`; `config` composed like `drift`).
-- **Lessons compounding**: LL-008 drove S2's `DriftState` enum; LL-010 (proactive GATE0) gave S3
-  a single-pass GATE0; LL-011 (state the exact parse/compare/curate mechanism in the story) added
-  after S2+S3 both spent an architect MINOR on a hedged mechanism.
-- **pattern-detector**: recommend running **after S4** (5th RETRO, normal cadence) — confirm the
-  mechanism-hedge thread + code-reviewer latency, and give LL-011 one cycle to prove itself.
-- Carried follow-ups (project-layer/doc, non-blocking): canonical vault `VERSION` file; sidebar
-  active-nav prefix-match; T1 context-digest for code-reviewer (latency); dev-README `BACKEND_PORT` note.
+- **S4 — first dedicated Phase 5.5 Security** (un-folded by Rule 0 for the client-path file-read surface):
+  PASS, no CRITICAL — every adversarial vector traced + live-confirmed. Clean division of labor: 5.5
+  passed the containment seam, the 6D review caught a non-security correctness BLOCKER (symlink
+  double-classification, Node-22 dirent footgun → **LL-012**).
+- **Lessons compounding**: LL-008→S2 enum; LL-010→S3 single-pass GATE0; LL-011→S4 exact containment;
+  LL-012 added (fs-walk symlink classification via stat, not dirent bits) + paired review-check §7.
+- **`pattern-detector` is now DUE** (5 RETROs: S12,S1,S2,S3,S4). Run before the next `/kuraka`. Threads:
+  code-reviewer latency (3/5 cycles), the LL-011/LL-012 mechanism-hedge split, arki gaps stay-closed,
+  and the carried debts below.
+- Carried follow-ups (5 cycles): canonical vault `VERSION` file; sidebar active-nav prefix-match; T1
+  context-digest for code-reviewer (latency); dev-README `BACKEND_PORT` note.
 
 ---
 _Budget table lives in `.claude/skills/kuraka-policies.md` and `rules/17`._
