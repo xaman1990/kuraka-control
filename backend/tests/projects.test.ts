@@ -1,5 +1,5 @@
 /**
- * Integration tests for GET /api/projects (AC-31).
+ * Integration tests for GET /api/projects (AC-31) and S4 layer endpoints.
  *
  * Spins an Express app on a random port (no supertest needed — Node 22 has
  * native fetch). Vault path is injected via a real temp dir so the full
@@ -9,6 +9,9 @@
  *   - 200 + { projects: [...], empty: false } — populated vault
  *   - 200 + { projects: [], empty: true }    — empty vault
  *   - 500 + { error: { code: "VAULT_UNREADABLE", detail: { path: <root> } } } — missing vault
+ *   S4 layer endpoint cases (T1 integration coverage via createApp harness):
+ *   - GET /api/projects/:name/layer — 200 tree, 200 has_layer:false, 404 unknown
+ *   - GET /api/projects/:name/layer/file — 200 content, 403 traversal, 404 no file
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import http from "node:http";
@@ -16,7 +19,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createApp } from "../src/index.js";
-import { ProjectListResponse, ProjectDetail } from "@kuraka-control/contracts";
+import { ProjectListResponse, ProjectDetail, LayerTreeResponse, LayerFileResponse } from "@kuraka-control/contracts";
 
 /** Starts an Express app on a random OS-assigned port; returns { server, baseUrl }. */
 async function _startServer(
@@ -570,5 +573,227 @@ describe("GET /api/projects/:name — path-separator and blank name rejected", (
 
     // Assert
     expect(response.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S4 — GET /api/projects/:name/layer integration tests
+// ---------------------------------------------------------------------------
+
+/** Writes a minimal vault project .md with a given `path` field. */
+async function _makeVaultProjectMd(
+  vaultRoot: string,
+  projectName: string,
+  projectPath: string,
+  hasProjectLayer: boolean = true,
+): Promise<void> {
+  await fs.writeFile(
+    path.join(vaultRoot, "projects", `${projectName}.md`),
+    `---
+name: ${projectName}
+path: ${projectPath}
+stack: node-express+react
+kuraka_version: "0.3.4"
+has_project_layer: ${hasProjectLayer}
+default_mode: normal
+status: active
+repo_url:
+focus_scope:
+last_mount: 2026-06-07
+last_sync:
+tags: []
+---
+
+# ${projectName}
+`,
+    "utf-8",
+  );
+}
+
+describe("GET /api/projects/:name/layer — 200 populated tree (S4 integration)", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    await _setupVault(false);
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "kuraka-layer-int-"));
+    // Create .claude/project/ with one file inside
+    const layerRoot = path.join(projectDir, ".claude", "project");
+    await fs.mkdir(layerRoot, { recursive: true });
+    await fs.writeFile(path.join(layerRoot, "conventions.md"), "# conventions");
+
+    await _makeVaultProjectMd(tempVaultRoot, "layer-project", projectDir);
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  afterEach(async () => {
+    if (projectDir) await fs.rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("should return 200 with has_layer:true when .claude/project/ exists", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/layer-project/layer`);
+
+    // Assert
+    expect(response.status).toBe(200);
+    const body = await response.json() as unknown;
+    const parsed = LayerTreeResponse.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.has_layer).toBe(true);
+      expect(parsed.data.root_rel).toBe(".claude/project");
+      expect(parsed.data.nodes.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("should include the conventions.md file in the tree nodes", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/layer-project/layer`);
+    const body = await response.json() as { nodes: Array<{ name: string; type: string }> };
+
+    // Assert
+    expect(body.nodes.some((n) => n.name === "conventions.md" && n.type === "file")).toBe(true);
+  });
+});
+
+describe("GET /api/projects/:name/layer — 200 has_layer:false when dir absent (S4 integration)", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    await _setupVault(false);
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "kuraka-layer-absent-"));
+    // Do NOT create .claude/project/ — registry flag disagrees (flag-drift test)
+    await _makeVaultProjectMd(tempVaultRoot, "no-layer-project", projectDir, true);
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  afterEach(async () => {
+    if (projectDir) await fs.rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("should return 200 with has_layer:false when .claude/project/ does not exist (flag-drift)", async () => {
+    // Act — registry says has_project_layer:true but dir is absent
+    const response = await fetch(`${baseUrl}/api/projects/no-layer-project/layer`);
+
+    // Assert — 200 (not 404), has_layer reflects REAL fs state
+    expect(response.status).toBe(200);
+    const body = await response.json() as unknown;
+    const parsed = LayerTreeResponse.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.has_layer).toBe(false);
+      expect(parsed.data.nodes).toEqual([]);
+      expect(parsed.data.empty).toBe(true);
+    }
+  });
+});
+
+describe("GET /api/projects/:name/layer — 404 for unknown name (S4 integration)", () => {
+  beforeEach(async () => {
+    await _setupVault(false);
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  it("should return 404 NOT_FOUND for a project name not in the vault", async () => {
+    // Act
+    const response = await fetch(`${baseUrl}/api/projects/ghost-project/layer`);
+
+    // Assert
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// S4 — GET /api/projects/:name/layer/file integration tests
+// ---------------------------------------------------------------------------
+
+describe("GET /api/projects/:name/layer/file — 200 content (S4 integration)", () => {
+  let projectDir: string;
+
+  beforeEach(async () => {
+    await _setupVault(false);
+    projectDir = await fs.mkdtemp(path.join(os.tmpdir(), "kuraka-layer-file-int-"));
+    const layerRoot = path.join(projectDir, ".claude", "project");
+    await fs.mkdir(layerRoot, { recursive: true });
+    await fs.writeFile(
+      path.join(layerRoot, "typescript.md"),
+      "# TypeScript conventions",
+      "utf-8",
+    );
+
+    await _makeVaultProjectMd(tempVaultRoot, "file-project", projectDir);
+    const started = await _startServer(createApp({ vaultRoot: tempVaultRoot }));
+    server = started.server;
+    baseUrl = started.baseUrl;
+  });
+
+  afterEach(async () => {
+    if (projectDir) await fs.rm(projectDir, { recursive: true, force: true });
+  });
+
+  it("should return 200 with file content for a valid contained rel path", async () => {
+    // Act
+    const response = await fetch(
+      `${baseUrl}/api/projects/file-project/layer/file?path=typescript.md`,
+    );
+
+    // Assert
+    expect(response.status).toBe(200);
+    const body = await response.json() as unknown;
+    const parsed = LayerFileResponse.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.content).toBe("# TypeScript conventions");
+      expect(parsed.data.rel_path).toBe("typescript.md");
+      expect(parsed.data.binary).toBe(false);
+      expect(parsed.data.too_large).toBe(false);
+    }
+  });
+
+  it("should return 403 PATH_FORBIDDEN for a traversal attack in ?path (SEC1 at route level)", async () => {
+    // Act
+    const response = await fetch(
+      `${baseUrl}/api/projects/file-project/layer/file?path=${encodeURIComponent("../../../../etc/passwd")}`,
+    );
+
+    // Assert — route maps FORBIDDEN sentinel to 403
+    expect(response.status).toBe(403);
+    const body = await response.json() as { error: { code: string; detail: { rel: string } } };
+    expect(body.error.code).toBe("PATH_FORBIDDEN");
+    // SEC5/SEC10: detail carries only rel, not the resolved absolute path
+    expect(body.error.detail.rel).toBe("../../../../etc/passwd");
+    expect(body.error.detail).not.toHaveProperty("abs");
+  });
+
+  it("should return 404 NOT_FOUND for a valid contained rel that does not exist", async () => {
+    // Act
+    const response = await fetch(
+      `${baseUrl}/api/projects/file-project/layer/file?path=nonexistent.md`,
+    );
+
+    // Assert
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: { code: string; detail: { rel: string } } };
+    expect(body.error.code).toBe("NOT_FOUND");
+    expect(body.error.detail.rel).toBe("nonexistent.md");
+  });
+
+  it("should return 400 BAD_REQUEST when ?path query parameter is missing", async () => {
+    // Act — no ?path= at all
+    const response = await fetch(
+      `${baseUrl}/api/projects/file-project/layer/file`,
+    );
+
+    // Assert
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
   });
 });
