@@ -225,7 +225,7 @@ export function ProjectDetailShell() {
           <DetailHeader project={data} activeTab={activeTab} onTabChange={setActiveTab} />
           {activeTab === "config" && <ConfigCard config={data.config} />}
           {activeTab === "layer" && (
-            <LayerTabContent name={data.name} enabled={activeTab === "layer"} />
+            <LayerTabContent name={data.name} />
           )}
         </div>
       )}

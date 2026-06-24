@@ -1,3 +1,4 @@
+import type { CSSProperties, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchLayerFile } from "../api/projectLayer.js";
 
@@ -25,14 +26,14 @@ function formatBytes(bytes: number): string {
 
 // ── State panels ──────────────────────────────────────────────────────────────
 
-const hintStyle: React.CSSProperties = {
+const hintStyle: CSSProperties = {
   color: "var(--text-3)",
   fontSize: "13px",
   padding: "48px 24px",
   textAlign: "center",
 };
 
-function HintText({ children }: { children: React.ReactNode }) {
+function HintText({ children }: { children: ReactNode }) {
   return <p style={hintStyle}>{children}</p>;
 }
 

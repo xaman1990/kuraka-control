@@ -140,13 +140,50 @@ async function _walkDir(
     return [];
   }
 
-  // Separate dirs and files (symlinked dirs are excluded from descent — B7).
-  const dirs = entries.filter(
-    (e) => e.isDirectory() || (e.isSymbolicLink() && !e.isFile()),
-  );
-  const files = entries.filter(
-    (e) => e.isFile() || (e.isSymbolicLink() && !e.isDirectory()),
-  );
+  // Classify entries explicitly so each dirent lands in exactly ONE group.
+  //
+  // On Node 22 a symlink dirent returns isSymbolicLink()===true but BOTH
+  // isFile()===false AND isDirectory()===false, so the old two-predicate
+  // approach matched every symlink in BOTH groups (double-emit, double-count).
+  //
+  // Fix: for symlinks we call fs.stat (follows the link) to resolve the
+  // target type, then place the entry in dirs or files accordingly.
+  // Dangling/unreadable symlinks (stat throws) are classified as files with
+  // size_bytes:null — they appear in the tree as broken-link file nodes so
+  // the user can see them. Real dirs and real files use their dirent flags
+  // directly; no stat call needed for the non-symlink case.
+  //
+  // Symlinked dirs are NOT descended (B7 — no-follow prevents symlink loops).
+  const dirs: (typeof entries[number])[] = [];
+  const files: (typeof entries[number])[] = [];
+  const symlinkStats = new Map<string, { isDir: boolean; size: number | null }>();
+
+  for (const e of entries) {
+    if (e.isDirectory()) {
+      dirs.push(e);
+    } else if (e.isFile()) {
+      files.push(e);
+    } else if (e.isSymbolicLink()) {
+      // Resolve once; result is cached in symlinkStats for the processing loops.
+      const absChild = path.join(absDir, e.name);
+      try {
+        const linkStat = await fs.stat(absChild); // follows the link
+        if (linkStat.isDirectory()) {
+          dirs.push(e);
+          symlinkStats.set(e.name, { isDir: true, size: null });
+        } else {
+          files.push(e);
+          symlinkStats.set(e.name, { isDir: false, size: linkStat.size });
+        }
+      } catch {
+        // Dangling symlink or EACCES — classify as a file node with no size.
+        files.push(e);
+        symlinkStats.set(e.name, { isDir: false, size: null });
+      }
+    }
+    // Entries that are none of the above (FIFO, socket, device) are silently
+    // skipped — they have no meaningful representation in the layer tree.
+  }
 
   // Sort each group alphabetically by name (B5).
   const sortByName = (a: { name: string }, b: { name: string }) =>
@@ -203,15 +240,23 @@ async function _walkDir(
     const relPath = _posixJoin(relDir, dirent.name);
     const absPath = path.join(absDir, dirent.name);
 
-    let size_bytes = 0;
-    try {
-      // Use lstat to get size; for symlinked files this gives the target's size
-      // which is the right value for the user — the real size will be re-checked
-      // on read via the containment algorithm.
-      const fileStat = await fs.stat(absPath);
-      size_bytes = fileStat.size;
-    } catch {
-      // Unreadable stat → include the node with size 0 (degrade, don't skip)
+    // For symlinks, use the size already resolved via fs.stat (follows the link)
+    // during classification above. For real files, stat now to get the size.
+    // fs.stat follows symlinks, giving the real target size — the right value
+    // for the user; the exact size will be re-checked on read via the
+    // containment algorithm (Step 6, LAYER_FILE_MAX_BYTES).
+    let size_bytes: number | null = null;
+    const cached = symlinkStats.get(dirent.name);
+    if (cached !== undefined) {
+      // Symlink: size already resolved (may be null for dangling links).
+      size_bytes = cached.size;
+    } else {
+      try {
+        const fileStat = await fs.stat(absPath);
+        size_bytes = fileStat.size;
+      } catch {
+        // Unreadable stat → include the node with size_bytes:null (degrade, don't skip)
+      }
     }
 
     result.push({

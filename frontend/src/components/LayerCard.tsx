@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { LayerNodeShape, LayerTreeResponse } from "@kuraka-control/contracts";
 
 // ── Icons (inline SVG, no color literals) ────────────────────────────────────
@@ -61,7 +62,7 @@ function TreeNodeRow({ node, depth, selectedRel, onFileSelect }: TreeNodeRowProp
   const indent = depth * 18;
   const isSelected = node.type === "file" && node.rel_path === selectedRel;
 
-  const rowStyle: React.CSSProperties = {
+  const rowStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
     gap: "6px",
@@ -74,7 +75,7 @@ function TreeNodeRow({ node, depth, selectedRel, onFileSelect }: TreeNodeRowProp
     background: isSelected ? "var(--surface-2)" : "transparent",
   };
 
-  const labelStyle: React.CSSProperties = {
+  const labelStyle: CSSProperties = {
     fontSize: "13px",
     color: node.type === "dir"
       ? "var(--text)"

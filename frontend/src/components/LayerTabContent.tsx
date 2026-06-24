@@ -8,7 +8,7 @@ import { LayerPreview } from "./LayerPreview.js";
 
 interface LayerTabContentProps {
   name: string;
-  enabled: boolean;
+  enabled?: boolean;
 }
 
 /**
@@ -17,7 +17,7 @@ interface LayerTabContentProps {
  * Renders: loading, error, no-layer empty state, or tree + preview side-by-side.
  * Tree is 360px fixed width; preview is flex-1 (fills remaining width).
  */
-export function LayerTabContent({ name, enabled }: LayerTabContentProps) {
+export function LayerTabContent({ name, enabled = true }: LayerTabContentProps) {
   const [selectedRel, setSelectedRel] = useState<string | null>(null);
 
   const { data: tree, isLoading, isError, error } = useQuery({
