@@ -192,6 +192,31 @@ inline (ahorra tokens en cada invocación).
   El `code-reviewer` verifica que ningún dirent de symlink caiga entre dos
   predicados de filtro (doble-emisión / omisión).
 
+## LL-013 — La reescritura de un documento estructurado DEBE preservar bytes: nunca round-trip por un serializador que re-emite el documento completo
+
+- **REQ origen**: REQ-20260625-S5b-1 (triage write actions / setFindingCell + setFrontmatterDecision)
+- **Síntoma**: La story prescribió re-ensamblar la card mutada con
+  `matter.stringify(parsedBody, data)`. Verificado empíricamente que
+  `matter.stringify(content, data) !== raw`: coacciona `date: 2026-06-06` → un
+  timestamp ISO (`Date`), re-quotea `source` y reflowea `tags: [retro-triage]` a
+  estilo bloque. CADA acción de escritura habría corrompido silenciosamente el
+  `date` (y el frontmatter) de la card en disco — la peor clase de bug en la
+  PRIMERA superficie de escritura al vault (silencioso, persistente, sobre la
+  fuente de verdad). Capturado PRE-CÓDIGO por el architect en el freeze.
+- **Causa raíz**: "round-trip el doc parseado para preservarlo" se LEE como obvio
+  pero es lo contrario de preservar bytes: el serializador re-emite el documento
+  ENTERO, coaccionando/reflowando campos no tocados. Fork gated por un hecho de
+  librería (semántica de `matter.stringify`/`JSON.stringify`/`yaml.stringify`), de
+  la familia de LL-011 (fork obvio) y LL-012 (gated por plataforma) — aquí por librería.
+- **Regla que aplica**: cuando una story/freeze describe la **reescritura de un
+  documento estructurado** (frontmatter, tabla markdown, JSON, YAML), `story-refiner`
+  / `architect-reviewer` declaran que la mutación se hace por **edición quirúrgica
+  de línea/región sobre el texto crudo, preservando los demás bytes verbatim —
+  NUNCA round-trip por `matter.stringify`/`JSON.stringify`/`yaml.stringify`**. El
+  `architect-reviewer` verifica EMPÍRICAMENTE `serialize(parse(raw)) === raw`
+  contra un archivo real antes de congelar. El `code-reviewer` confirma que ningún
+  path de escritura llama a un serializador full-doc.
+
 ---
 
 ## Formato para nuevas lecciones
