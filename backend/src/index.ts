@@ -15,6 +15,7 @@ import express from "express";
 import { env } from "./config/env.js";
 import { healthRouter } from "./routes/health.js";
 import { createProjectsRouter } from "./routes/projects.js";
+import { createTriageRouter } from "./routes/triage.js";
 
 export interface AppOptions {
   /** Override the vault root (defaults to env.vaultRoot). Useful for tests. */
@@ -33,6 +34,7 @@ export function createApp(options: AppOptions = {}): express.Express {
 
   app.use("/api", healthRouter);
   app.use("/api", createProjectsRouter({ vaultRoot }));
+  app.use("/api", createTriageRouter({ vaultRoot }));
 
   return app;
 }

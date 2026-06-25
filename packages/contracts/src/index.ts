@@ -168,3 +168,38 @@ export const LayerFileResponse = z.object({
   binary: z.boolean(),                       // true ⇔ NUL byte in first BINARY_SAMPLE_BYTES
 });
 export type LayerFileResponse = z.infer<typeof LayerFileResponse>;
+
+// ---- S5a: RETRO Triage (READ-ONLY projection of <vault>/retro-triage/*.md) ----
+// ALL vocab fields mirror externally-owned vault values → z.string(), NO z.enum (LL-008).
+// Map known values → UI variant at the component layer with a neutral fallback.
+
+/** One row of a triage doc's findings table. Externally-owned vocab → permissive. */
+export const TriageFinding = z.object({
+  id: z.string().nullable(),           // "#" cell: P1.. or 1.. ; null on blank
+  finding: z.string().nullable(),      // description (may contain commas/parens)
+  routing: z.string().nullable(),      // framework|project (md bold stripped) — UI→governance color
+  target_file: z.string().nullable(),  // backticks stripped
+  severity: z.string().nullable(),     // HIGH|MED|... — externally-owned
+  status: z.string().nullable(),       // applied|pending|... — externally-owned
+});
+export type TriageFinding = z.infer<typeof TriageFinding>;
+
+/** One triage doc = frontmatter meta + findings + rationale prose. */
+export const TriageDoc = z.object({
+  id: z.string(),                      // filename minus ".md" (e.g. "2026-06-06-sie_v2")
+  project: z.string().nullable(),
+  source: z.string().nullable(),
+  date: z.string().nullable(),         // YYYY-MM-DD verbatim, NOT a Date
+  decision: z.string().nullable(),     // pending|applied|rejected|deferred — externally-owned
+  applied: z.boolean().nullable(),
+  tags: z.array(z.string()),           // [] never null
+  findings: z.array(TriageFinding),    // [] when table absent/all-blank
+  rationale: z.string().nullable(),    // raw md under "## Decisions & rationale"
+});
+export type TriageDoc = z.infer<typeof TriageDoc>;
+
+export const TriageListResponse = z.object({
+  docs: z.array(TriageDoc),
+  empty: z.boolean(),                  // true ⇔ docs.length === 0 (api-contract: empty≠error)
+});
+export type TriageListResponse = z.infer<typeof TriageListResponse>;
