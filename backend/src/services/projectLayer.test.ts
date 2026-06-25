@@ -289,7 +289,7 @@ describe("getLayerFile — valid contained file → LayerFileResponse", () => {
 
     // Assert
     expect(typeof result).toBe("object");
-    if (typeof result === "object" && result !== null && !["BAD_REQUEST", "FORBIDDEN", "NOT_FOUND"].includes(result as string)) {
+    if (typeof result === "object" && result !== null) {
       const response = result as { content: string; rel_path: string; binary: boolean; too_large: boolean };
       expect(response.content).toBe("# TypeScript conventions");
       expect(response.rel_path).toBe("conventions/typescript.md");

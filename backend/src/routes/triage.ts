@@ -305,6 +305,67 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
     }
   });
 
+  // ── Private helpers for the apply route ──────────────────────────────────
+
+  /** Send a 404 NOT_FOUND response for a triage document or finding. */
+  function sendApplyNotFound(id: string, res: Response): void {
+    res.status(404).json({
+      error: {
+        code: ERROR_CODE_NOT_FOUND,
+        message: `Triage document or finding '${id}' not found`,
+        detail: { id },
+      },
+    });
+  }
+
+  /** Send a 400 BAD_REQUEST response for an invalid apply request. */
+  function sendApplyBadRequest(id: string, res: Response): void {
+    res.status(400).json({
+      error: {
+        code: ERROR_CODE_BAD_REQUEST,
+        message: "finding_id is required; finding must be routed; target_file must be non-null",
+        detail: { id },
+      },
+    });
+  }
+
+  /** Mint a fresh token and send a 403 CONFIRM_REQUIRED response. */
+  function handleConfirmRequired(
+    scope: { id: string; finding_id: string; target_file: string },
+    res: Response,
+  ): void {
+    const now = Date.now();
+    const freshToken = mintConfirmToken(scope, now);
+    const expiresAt = new Date(now + CONFIRM_TOKEN_TTL_MS).toISOString();
+    res.status(403).json({
+      error: {
+        code: ERROR_CODE_CONFIRM_REQUIRED,
+        message: "Framework apply requires a confirm token.",
+        detail: {
+          id: scope.id,
+          finding_id: scope.finding_id,
+          target_file: scope.target_file,
+          confirm_token: freshToken,
+          expires_at: expiresAt,
+        },
+      },
+    });
+  }
+
+  /** Send a 409 CONFLICT response. */
+  function handleConflict(
+    detail: { target_file: string; conflicting_card: { id: string; finding_id: string | null } },
+    res: Response,
+  ): void {
+    res.status(409).json({
+      error: {
+        code: ERROR_CODE_CONFLICT,
+        message: "A sibling finding has already applied this target file.",
+        detail,
+      },
+    });
+  }
+
   // ── POST /triage/:id/apply ────────────────────────────────────────────────
 
   router.post("/triage/:id/apply", async (req: Request, res: Response) => {
@@ -314,11 +375,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
     const parseResult = TriageApplyRequest.safeParse(req.body);
     if (!parseResult.success) {
       res.status(400).json({
-        error: {
-          code: ERROR_CODE_BAD_REQUEST,
-          message: "Invalid request body",
-          detail: {},
-        },
+        error: { code: ERROR_CODE_BAD_REQUEST, message: "Invalid request body", detail: {} },
       });
       return;
     }
@@ -334,58 +391,14 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       });
 
       // ── Sentinel mapping (SCHEMA-FROZEN-S5b-2 §5) ────────────────────────────
-
-      if (result === "NOT_FOUND") {
-        res.status(404).json({
-          error: {
-            code: ERROR_CODE_NOT_FOUND,
-            message: `Triage document or finding '${id}' not found`,
-            detail: { id },
-          },
-        });
-        return;
-      }
-
-      if (result === "BAD_REQUEST") {
-        res.status(400).json({
-          error: {
-            code: ERROR_CODE_BAD_REQUEST,
-            message: "finding_id is required; finding must be routed; target_file must be non-null",
-            detail: { id },
-          },
-        });
-        return;
-      }
-
+      if (result === "NOT_FOUND") { sendApplyNotFound(id!, res); return; }
+      if (result === "BAD_REQUEST") { sendApplyBadRequest(id!, res); return; }
       if (typeof result === "object" && "kind" in result && result.kind === "CONFIRM_REQUIRED") {
-        // Mint a fresh token; the route owns `now` so it can also compute expires_at.
-        const now = Date.now();
-        const freshToken = mintConfirmToken(result.scope, now);
-        const expiresAt = new Date(now + CONFIRM_TOKEN_TTL_MS).toISOString();
-        res.status(403).json({
-          error: {
-            code: ERROR_CODE_CONFIRM_REQUIRED,
-            message: "Framework apply requires a confirm token.",
-            detail: {
-              id: result.scope.id,
-              finding_id: result.scope.finding_id,
-              target_file: result.scope.target_file,
-              confirm_token: freshToken,
-              expires_at: expiresAt,
-            },
-          },
-        });
+        handleConfirmRequired(result.scope, res);
         return;
       }
-
       if (typeof result === "object" && "kind" in result && result.kind === "CONFLICT") {
-        res.status(409).json({
-          error: {
-            code: ERROR_CODE_CONFLICT,
-            message: "A sibling finding has already applied this target file.",
-            detail: result.detail,
-          },
-        });
+        handleConflict(result.detail, res);
         return;
       }
 

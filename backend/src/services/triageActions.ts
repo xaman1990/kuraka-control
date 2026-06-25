@@ -110,6 +110,62 @@ async function reReadCard(vaultRoot: string, id: string): Promise<TriageDoc> {
   return { id, ...parseTriageDoc(written) };
 }
 
+// ── Private helpers for applyTriage ──────────────────────────────────────────
+
+/**
+ * RL-5 conflict scan: re-reads ALL triage docs and returns a ConflictResult if
+ * any sibling finding has already applied the same target_file, or null if clear.
+ * Tolerates per-card parse failures (listTriageDocs handles those internally).
+ */
+async function scanConflicts(
+  vaultRoot: string,
+  selfId: string,
+  findingId: string,
+  targetFile: string,
+): Promise<ConflictResult | null> {
+  const allDocs = await listTriageDocs({ vaultRoot });
+  for (const sibDoc of allDocs) {
+    for (const F of sibDoc.findings) {
+      if (F.target_file === null) continue;
+      if (F.target_file !== targetFile) continue;
+      const isSelf = sibDoc.id === selfId && F.id !== null && F.id === findingId;
+      if (isSelf) continue;
+      const siblingApplied = F.status === "applied" || sibDoc.decision === "applied";
+      if (siblingApplied) {
+        return {
+          kind: "CONFLICT",
+          detail: {
+            target_file: targetFile,
+            conflicting_card: { id: sibDoc.id, finding_id: F.id },
+          },
+        };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Framework-branch token check. Returns a ConfirmRequired sentinel when no valid
+ * token is present; returns "OK" (string) when the token is valid so the caller
+ * can proceed to write. Returns null for the project branch (no token required).
+ */
+function checkToken(
+  routing: string,
+  confirm_token: string | null | undefined,
+  scope: { id: string; finding_id: string; target_file: string },
+): ConfirmRequired | "OK" | null {
+  if (routing !== "framework") return null;
+  const vr = confirm_token
+    ? verifyConfirmToken(confirm_token, scope, Date.now())
+    : "INVALID";
+  if (vr !== "OK") {
+    const confirmRequired: ConfirmRequired = { kind: "CONFIRM_REQUIRED", scope };
+    return confirmRequired;
+  }
+  return "OK";
+}
+
 // ── Public action functions ───────────────────────────────────────────────────
 
 /**
@@ -224,96 +280,48 @@ export async function applyTriage(input: ApplyInput): Promise<ActionResult> {
   const triageDir = path.join(vaultRoot, TRIAGE_RECORD_DIR);
   const cardPath = path.join(triageDir, `${input.id}.md`);
 
-  // ── Step 1: finding_id guard ──────────────────────────────────────────────────
-  if (!input.finding_id || input.finding_id.trim() === "") {
-    return "BAD_REQUEST";
-  }
+  // Steps 1–5: input guards (finding_id, card existence, routing, target_file).
+  if (!input.finding_id || input.finding_id.trim() === "") return "BAD_REQUEST";
   const findingId = input.finding_id;
-
-  // ── Step 2: read card ────────────────────────────────────────────────────────
   const raw = await readCard(cardPath);
   if (raw === null) return "NOT_FOUND";
 
-  // ── Step 3: parse + locate the finding ──────────────────────────────────────
   const doc = { id: input.id, ...parseTriageDoc(raw) };
   const finding = doc.findings.find((f) => f.id === findingId);
   if (!finding) return "NOT_FOUND";
 
-  // ── Step 4: routing guard ────────────────────────────────────────────────────
   const routing = finding.routing;
   if (routing === null || routing.trim() === "") return "BAD_REQUEST";
   if (routing !== "framework" && routing !== "project") return "BAD_REQUEST";
 
-  // ── Step 5: target_file guard (§1.5 null-target guard) ──────────────────────
   const targetFile = finding.target_file;
   if (targetFile === null || targetFile.trim() === "") return "BAD_REQUEST";
 
-  // ── Step 6: RL-5 conflict scan (AFTER routing, BEFORE token/write) ───────────
-  // Re-reads ALL triage docs from disk right now. Tolerates per-card parse failures.
-  const allDocs = await listTriageDocs({ vaultRoot });
-  for (const sibDoc of allDocs) {
-    for (const F of sibDoc.findings) {
-      // (a) SAME TARGET — null target never conflicts.
-      if (F.target_file === null) continue;
-      if (F.target_file !== targetFile) continue;
+  // Step 6: RL-5 conflict scan (re-reads ALL docs; AFTER routing, BEFORE token/write).
+  const conflict = await scanConflicts(vaultRoot, input.id, findingId, targetFile);
+  if (conflict !== null) return conflict;
 
-      // (b) NOT SELF — exclude the exact finding being applied.
-      // GUARD the nullable F.id: a null-id sibling can never be "self" because
-      // findingId is a non-empty string (step 1 guard). Self requires BOTH equal.
-      const isSelf = sibDoc.id === input.id && F.id !== null && F.id === findingId;
-      if (isSelf) continue;
+  // Step 7: framework branch requires a valid confirm token.
+  const scope = { id: input.id, finding_id: findingId, target_file: targetFile };
+  const tokenResult = checkToken(routing, input.confirm_token, scope);
+  if (tokenResult !== null && tokenResult !== "OK") return tokenResult;
+  const isFramework = routing === "framework";
 
-      // (c) CONFLICTING STATE — sibling already applied the same target.
-      const siblingApplied = F.status === "applied" || sibDoc.decision === "applied";
-      if (siblingApplied) {
-        const conflict: ConflictResult = {
-          kind: "CONFLICT",
-          detail: {
-            target_file: targetFile,
-            conflicting_card: { id: sibDoc.id, finding_id: F.id },
-          },
-        };
-        return conflict;
-      }
-    }
-  }
-
-  // ── Step 7: routing branch ───────────────────────────────────────────────────
-  let isFramework = false;
-  if (routing === "framework") {
-    isFramework = true;
-    const scope = { id: input.id, finding_id: findingId, target_file: targetFile };
-    const vr = input.confirm_token
-      ? verifyConfirmToken(input.confirm_token, scope, Date.now())
-      : "INVALID";
-    if (vr !== "OK") {
-      const confirmRequired: ConfirmRequired = { kind: "CONFIRM_REQUIRED", scope };
-      return confirmRequired;
-    }
-  }
-
-  // ── Step 8: WRITE (both branches, after all gates pass) ──────────────────────
-  // NEVER calls matter.stringify (LL-013). Surgical raw-line edit only.
-  // NOTE: step 3 already confirmed the finding exists, so a no-op here means the
-  // cell is ALREADY set to "applied" (idempotent apply). Skip the redundant write
-  // and proceed to re-read rather than returning NOT_FOUND (which would be wrong:
-  // the finding is known to exist; this is a valid idempotent apply).
+  // Step 8: WRITE — NEVER calls matter.stringify (LL-013); surgical raw-line edit only.
+  // No-op belt-and-suspenders (§3 step-8): "applied" already → idempotent; else → NOT_FOUND.
   const newText = setFindingCell(raw, findingId, 5, "applied");
-  if (newText !== raw) {
+  if (newText === raw) {
+    if (finding.status !== "applied") return "NOT_FOUND";
+  } else {
     await writeTriageRecord(triageDir, `${input.id}.md`, newText);
   }
 
-  // ── Step 9: POST-WRITE (framework branch only) ────────────────────────────────
-  // markTokenUsed ONLY after successful write — a transient write failure allows retry.
-  // For idempotent applies (newText === raw) we still mark the token used: the gate
-  // was fully exercised (RL-5 scan passed, token verified) and the on-disk state
-  // reflects the expected outcome. Not marking would allow unlimited idempotent
-  // framework re-applies with the same token, undermining the single-use property.
+  // Step 9: markTokenUsed AFTER successful write (retry-safe; also covers idempotent applies).
   if (isFramework && input.confirm_token) {
     const { hmacHex, issued_at } = tokenReplayKey(input.confirm_token);
     markTokenUsed(hmacHex, issued_at);
   }
 
-  // ── Step 10: re-read + return fresh TriageDoc (disk truth) ───────────────────
+  // Step 10: re-read from disk → return fresh TriageDoc (disk truth).
   return reReadCard(vaultRoot, input.id);
 }

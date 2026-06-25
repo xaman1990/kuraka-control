@@ -1,7 +1,7 @@
 import type { KeyboardEvent, MouseEvent } from "react";
-import { useState } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { applyFinding, isConfirmRequiredError } from "../api/triage.js";
+import { applyFinding, isConfirmRequiredError, isConflictError } from "../api/triage.js";
 import type { ConfirmRequiredDetail } from "../api/triage.js";
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -36,6 +36,11 @@ export function ConfirmApplyModal({
   onSuccess,
 }: ConfirmApplyModalProps) {
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   const mutation = useMutation({
     mutationFn: () =>
@@ -55,12 +60,12 @@ export function ConfirmApplyModal({
         );
         return;
       }
-      const e = err as { detail?: { conflicting_card?: { id?: string } }; message?: string } | null;
-      const cid = e?.detail?.conflicting_card?.id;
-      if (cid) {
-        setInlineError(`Conflict: target already applied in card "${cid}". Cannot apply again.`);
+      if (isConflictError(err)) {
+        const cid = err.detail?.conflicting_card?.id;
+        setInlineError(`Conflict: target already applied in card "${cid ?? "unknown"}". Cannot apply again.`);
         return;
       }
+      const e = err as { message?: string } | null;
       setInlineError(e?.message ?? "Apply failed. Please try again.");
     },
   });
@@ -81,9 +86,7 @@ export function ConfirmApplyModal({
 
   return (
     <div
-      role="presentation"
       onClick={handleOverlayClick}
-      onKeyDown={handleKeyDown}
       style={{
         position: "fixed",
         inset: 0,
@@ -95,10 +98,12 @@ export function ConfirmApplyModal({
       }}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="confirm-apply-title"
         tabIndex={-1}
+        onKeyDown={handleKeyDown}
         style={{
           background: "var(--surface)",
           border: "1px solid var(--border)",
@@ -148,7 +153,7 @@ export function ConfirmApplyModal({
           <code
             style={{
               fontSize: "12px",
-              color: "var(--gold, var(--warning))",
+              color: "var(--gov-framework)",
               wordBreak: "break-all",
               lineHeight: 1.5,
             }}
@@ -245,9 +250,9 @@ export function ConfirmApplyModal({
               fontSize: "13px",
               padding: "7px 18px",
               borderRadius: "6px",
-              border: "1px solid var(--gold, var(--warning))",
+              border: "1px solid var(--gov-framework)",
               background: "var(--surface-2)",
-              color: "var(--gold, var(--warning))",
+              color: "var(--gov-framework)",
               fontWeight: 600,
               cursor: isPending ? "wait" : "pointer",
               opacity: isPending ? 0.6 : 1,

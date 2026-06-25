@@ -84,6 +84,56 @@ function base64url(input: string | Buffer): string {
   return buf.toString("base64url");
 }
 
+// ── Internal: decode + signature verify ──────────────────────────────────────
+
+/** Result of decoding + verifying the token structure and HMAC signature. */
+type DecodeResult =
+  | { ok: true; payload: TokenPayload; hmacHex: string }
+  | { ok: false; result: VerifyResult };
+
+/**
+ * Decode the token string, validate its structure, and verify the HMAC signature.
+ * Returns the decoded payload + hmacHex on success, or a VerifyResult sentinel on failure.
+ * Steps 0 (STRUCTURE) and 1 (SIGNATURE) of the frozen verify order.
+ */
+function decodeAndVerifySignature(token: string): DecodeResult {
+  // ── 0. STRUCTURE ─────────────────────────────────────────────────────────────
+  const dot = token.indexOf(".");
+  if (dot <= 0 || dot === token.length - 1) return { ok: false, result: "INVALID" };
+
+  let payloadJson: string;
+  let sigBuf: Buffer;
+  let payload: TokenPayload;
+
+  try {
+    payloadJson = Buffer.from(token.slice(0, dot), "base64url").toString("utf-8");
+    sigBuf = Buffer.from(token.slice(dot + 1), "base64url");
+    payload = JSON.parse(payloadJson) as TokenPayload;
+  } catch {
+    return { ok: false, result: "INVALID" };
+  }
+
+  // Shape guard: the 4 fields must be present and correctly typed.
+  if (
+    typeof payload?.id !== "string" ||
+    typeof payload?.finding_id !== "string" ||
+    typeof payload?.target_file !== "string" ||
+    typeof payload?.issued_at !== "number"
+  ) {
+    return { ok: false, result: "INVALID" };
+  }
+
+  // ── 1. SIGNATURE (recompute over RE-SERIALIZED decoded payload) ───────────────
+  const expected = createHmac("sha256", CONFIRM_SECRET)
+    .update(canonicalPayload(payload))
+    .digest();
+
+  if (sigBuf.length !== expected.length) return { ok: false, result: "INVALID" };
+  if (!timingSafeEqual(sigBuf, expected)) return { ok: false, result: "INVALID" };
+
+  return { ok: true, payload, hmacHex: expected.toString("hex") };
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
@@ -119,45 +169,10 @@ export function mintConfirmToken(scope: TokenScope, now: number = Date.now()): s
  * @param now     current timestamp in ms (injectable for testing).
  */
 export function verifyConfirmToken(token: string, scope: TokenScope, now: number): VerifyResult {
-  // ── 0. STRUCTURE ─────────────────────────────────────────────────────────────
-  const dot = token.indexOf(".");
-  if (dot <= 0 || dot === token.length - 1) return "INVALID";
-
-  let payloadJson: string;
-  let sigBuf: Buffer;
-  let payload: TokenPayload;
-
-  try {
-    payloadJson = Buffer.from(token.slice(0, dot), "base64url").toString("utf-8");
-    sigBuf = Buffer.from(token.slice(dot + 1), "base64url");
-    payload = JSON.parse(payloadJson) as TokenPayload;
-  } catch {
-    return "INVALID";
-  }
-
-  // Shape guard: the 4 fields must be present and correctly typed.
-  if (
-    typeof payload?.id !== "string" ||
-    typeof payload?.finding_id !== "string" ||
-    typeof payload?.target_file !== "string" ||
-    typeof payload?.issued_at !== "number"
-  ) {
-    return "INVALID";
-  }
-
-  // ── 1. SIGNATURE (recompute over RE-SERIALIZED decoded payload) ───────────────
-  // Re-serialize canonically from the PARSED payload — never HMAC the attacker's
-  // raw bytes. Makes the signature immune to whitespace / key-reorder / extra-key tricks.
-  const expected = createHmac("sha256", CONFIRM_SECRET)
-    .update(canonicalPayload(payload))
-    .digest(); // Buffer
-
-  // LENGTH GUARD FIRST — timingSafeEqual THROWS on unequal-length Buffers.
-  if (sigBuf.length !== expected.length) return "INVALID";
-  if (!timingSafeEqual(sigBuf, expected)) return "INVALID"; // constant-time comparison
-
-  // From here the token is authentic (signed by THIS process).
-  const hmacHex = expected.toString("hex");
+  // ── 0+1. STRUCTURE + SIGNATURE (delegated to private helper) ─────────────────
+  const decoded = decodeAndVerifySignature(token);
+  if (!decoded.ok) return decoded.result;
+  const { payload, hmacHex } = decoded;
 
   // ── 2. SCOPE BINDING ──────────────────────────────────────────────────────────
   // Re-check against the live request scope — the service builds this from the
@@ -213,11 +228,9 @@ export function markTokenUsed(hmacHex: string, issuedAt: number, now: number = D
  * result is undefined behavior — do NOT call on untrusted input.
  */
 export function tokenReplayKey(token: string): { hmacHex: string; issued_at: number } {
-  const dot = token.indexOf(".");
-  const payloadJson = Buffer.from(token.slice(0, dot), "base64url").toString("utf-8");
-  const payload = JSON.parse(payloadJson) as TokenPayload;
-  const hmac = createHmac("sha256", CONFIRM_SECRET)
-    .update(canonicalPayload(payload))
-    .digest();
-  return { hmacHex: hmac.toString("hex"), issued_at: payload.issued_at };
+  const decoded = decodeAndVerifySignature(token);
+  // Precondition: verifyConfirmToken returned "OK" for this token. If it didn't,
+  // the decode will succeed (token is authentic) and decoded.ok is true.
+  if (!decoded.ok) throw new Error("tokenReplayKey called on non-decodable token");
+  return { hmacHex: decoded.hmacHex, issued_at: decoded.payload.issued_at };
 }

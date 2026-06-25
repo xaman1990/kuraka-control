@@ -115,9 +115,9 @@ export function FindingApplyControl({ docId, finding }: FindingApplyControlProps
           fontSize: "11px",
           padding: "2px 8px",
           borderRadius: "4px",
-          border: `1px solid ${routing === "framework" ? "var(--gold, var(--warning))" : "var(--jade)"}`,
+          border: `1px solid ${routing === "framework" ? "var(--gov-framework)" : "var(--jade)"}`,
           background: "var(--surface-2)",
-          color: routing === "framework" ? "var(--gold, var(--warning))" : "var(--jade)",
+          color: routing === "framework" ? "var(--gov-framework)" : "var(--jade)",
           cursor: isDisabled ? "wait" : "pointer",
           opacity: isDisabled ? 0.6 : 1,
         }}
