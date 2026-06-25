@@ -6,6 +6,7 @@ import { fetchTriage } from "../api/triage.js";
 import { AppShell } from "../components/AppShell.js";
 import { Badge } from "../components/Badge.js";
 import { RoutingBadge, severityVariant } from "../components/TriageCard.js";
+import { DocLevelActions, FindingRoutingControl } from "../components/TriageActions.js";
 
 // ── Status badge helper ───────────────────────────────────────────────────────
 
@@ -72,10 +73,13 @@ function DocMeta({ doc }: { doc: TriageDoc }) {
         <span>{doc.id}</span>
       </p>
 
-      {/* Title */}
-      <h1 className="font-bold" style={{ color: "var(--text)", fontSize: "22px", lineHeight: 1.2 }}>
-        {doc.project ?? doc.id}
-      </h1>
+      {/* Title + card-level actions */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-bold" style={{ color: "var(--text)", fontSize: "22px", lineHeight: 1.2 }}>
+          {doc.project ?? doc.id}
+        </h1>
+        <DocLevelActions docId={doc.id} />
+      </div>
 
       {/* Meta pills */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -123,7 +127,7 @@ function FindingsTable({ doc }: { doc: TriageDoc }) {
       >
         <thead>
           <tr>
-            {["#", "Finding", "Routing", "Target file", "Severity", "Status"].map((col) => (
+            {["#", "Finding", "Routing", "Target file", "Severity", "Status", "Actions"].map((col) => (
               <th
                 key={col}
                 style={{
@@ -171,6 +175,9 @@ function FindingsTable({ doc }: { doc: TriageDoc }) {
               </td>
               <td style={{ padding: "10px 12px" }}>
                 <StatusBadge status={f.status} />
+              </td>
+              <td style={{ padding: "10px 12px", whiteSpace: "nowrap" }}>
+                <FindingRoutingControl docId={doc.id} finding={f} />
               </td>
             </tr>
           ))}
@@ -228,7 +235,8 @@ function SectionLabel({ children }: { children: ReactNode }) {
  * Uses the shared ["triage"] react-query cache to find the doc by id.
  * No additional fetch is made. If the cache is cold (direct navigation),
  * fetchTriage is called transparently by useQuery.
- * Renders: doc meta, findings table, rationale prose.
+ * Renders: doc meta, findings table (with per-row routing controls), rationale.
+ * Card-level Defer and Reject buttons live in DocMeta via DocLevelActions.
  */
 export function TriageDetailPage() {
   const { id } = useParams<{ id: string }>();
