@@ -1,24 +1,11 @@
 import { Link, useParams } from "react-router-dom";
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { TriageDoc, TriageListResponse } from "@kuraka-control/contracts";
 import { fetchTriage } from "../api/triage.js";
 import { AppShell } from "../components/AppShell.js";
 import { Badge } from "../components/Badge.js";
-import { GovernanceBadge } from "../components/GovernanceBadge.js";
-import { severityVariant } from "../components/TriageCard.js";
-
-// ── Routing badge helper (mirrors TriageCard, no duplication of logic) ─────────
-
-function RoutingBadge({ routing }: { routing: string | null }) {
-  if (routing === null) {
-    return <Badge variant="neutral">—</Badge>;
-  }
-  const lower = routing.toLowerCase();
-  if (lower.includes("framework")) {
-    return <GovernanceBadge governance="framework" label={routing} />;
-  }
-  return <GovernanceBadge governance="project" label={routing} />;
-}
+import { RoutingBadge, severityVariant } from "../components/TriageCard.js";
 
 // ── Status badge helper ───────────────────────────────────────────────────────
 
@@ -225,7 +212,7 @@ function RationaleBlock({ rationale }: { rationale: string | null }) {
 
 // ── Section divider ───────────────────────────────────────────────────────────
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <h2 className="text-base font-semibold" style={{ color: "var(--text)" }}>
       {children}

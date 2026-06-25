@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import type { KeyboardEvent } from "react";
 import type { TriageDoc, TriageFinding } from "@kuraka-control/contracts";
 import { Badge } from "./Badge.js";
 import type { BadgeVariant } from "./Badge.js";
@@ -27,7 +28,7 @@ export function severityVariant(severity: string | null): BadgeVariant {
  * Value containing "framework" (case-insensitive) → GovernanceBadge framework (gold).
  * Otherwise → GovernanceBadge project (jade).
  */
-function RoutingBadge({ routing }: { routing: string | null }) {
+export function RoutingBadge({ routing }: { routing: string | null }) {
   if (routing === null) {
     return <Badge variant="neutral">—</Badge>;
   }
@@ -71,7 +72,7 @@ export function TriageCard({
     navigate(`/triage/${encodeURIComponent(docId)}`);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: KeyboardEvent) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       handleClick();
