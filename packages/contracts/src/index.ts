@@ -203,3 +203,34 @@ export const TriageListResponse = z.object({
   empty: z.boolean(),                  // true ⇔ docs.length === 0 (api-contract: empty≠error)
 });
 export type TriageListResponse = z.infer<typeof TriageListResponse>;
+
+// ---- S5b-1: RETRO Triage WRITE actions (request/response) ----------------------
+// App-OWNED action input vocabulary → z.enum is correct (LL-008 exception).
+
+export const TriageRouting = z.enum(["framework", "project"]);
+export type TriageRouting = z.infer<typeof TriageRouting>;
+
+export const TriageRouteRequest = z.object({
+  finding_id: z.string(),          // REQUIRED — a card has no single routing
+  routing: TriageRouting,
+});
+export type TriageRouteRequest = z.infer<typeof TriageRouteRequest>;
+
+export const TriageDeferRequest = z.object({
+  finding_id: z.string().optional(),   // absent = card-level defer
+});
+export type TriageDeferRequest = z.infer<typeof TriageDeferRequest>;
+
+export const TriageRejectRequest = z.object({
+  finding_id: z.string().optional(),   // absent = card-level reject
+});
+export type TriageRejectRequest = z.infer<typeof TriageRejectRequest>;
+
+export const TriageActionResponse = z.object({
+  doc: TriageDoc,                       // freshly re-read doc (disk truth)
+});
+export type TriageActionResponse = z.infer<typeof TriageActionResponse>;
+
+// Error-code constants (frontend checks by constant, not string literal).
+export const TRIAGE_ERROR_WRITE_FAILED = "WRITE_FAILED" as const;
+export const TRIAGE_ERROR_PATH_FORBIDDEN = "PATH_FORBIDDEN" as const;
