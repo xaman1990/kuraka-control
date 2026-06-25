@@ -12,10 +12,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { TriageDoc } from "@kuraka-control/contracts";
-import type { TriageRouting } from "@kuraka-control/contracts";
-import { parseTriageDoc } from "../domain/triage.js";
-import { setFindingCell, setFrontmatterDecision } from "../domain/triage.js";
+import type { TriageDoc, TriageRouting } from "@kuraka-control/contracts";
+import { parseTriageDoc, setFindingCell, setFrontmatterDecision } from "../domain/triage.js";
 import {
   writeTriageRecord,
   TRIAGE_RECORD_DIR,

@@ -20,6 +20,8 @@ import {
   TriageRouteRequest,
   TriageDeferRequest,
   TriageRejectRequest,
+  TRIAGE_ERROR_NOT_FOUND,
+  TRIAGE_ERROR_BAD_REQUEST,
 } from "@kuraka-control/contracts";
 import { getTriageList } from "../services/triageList.js";
 import {
@@ -33,8 +35,6 @@ import { WriteFirewallError } from "../repositories/writeFirewall.js";
 // ── Error code constants — never magic strings ───────────────────────────────
 
 const ERROR_CODE_VAULT_UNREADABLE = "VAULT_UNREADABLE" as const;
-const ERROR_CODE_NOT_FOUND = "NOT_FOUND" as const;
-const ERROR_CODE_BAD_REQUEST = "BAD_REQUEST" as const;
 const ERROR_CODE_PATH_FORBIDDEN = "PATH_FORBIDDEN" as const;
 const ERROR_CODE_WRITE_FAILED = "WRITE_FAILED" as const;
 
@@ -80,7 +80,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
     if (!id || id.trim() === "" || id.includes("/") || id.includes("\\")) {
       res.status(404).json({
         error: {
-          code: ERROR_CODE_NOT_FOUND,
+          code: TRIAGE_ERROR_NOT_FOUND,
           message: `Triage document '${id}' not found`,
           detail: { id },
         },
@@ -139,7 +139,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
     if (!parseResult.success) {
       res.status(400).json({
         error: {
-          code: ERROR_CODE_BAD_REQUEST,
+          code: TRIAGE_ERROR_BAD_REQUEST,
           message: "Invalid request body",
           detail: {},
         },
@@ -160,7 +160,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       if (result === "NOT_FOUND") {
         res.status(404).json({
           error: {
-            code: ERROR_CODE_NOT_FOUND,
+            code: TRIAGE_ERROR_NOT_FOUND,
             message: `Triage document or finding '${id}' not found`,
             detail: { id },
           },
@@ -171,7 +171,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       if (result === "BAD_REQUEST") {
         res.status(400).json({
           error: {
-            code: ERROR_CODE_BAD_REQUEST,
+            code: TRIAGE_ERROR_BAD_REQUEST,
             message: "finding_id is required for route action",
             detail: { id },
           },
@@ -195,7 +195,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
     if (!parseResult.success) {
       res.status(400).json({
         error: {
-          code: ERROR_CODE_BAD_REQUEST,
+          code: TRIAGE_ERROR_BAD_REQUEST,
           message: "Invalid request body",
           detail: {},
         },
@@ -215,7 +215,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       if (result === "NOT_FOUND") {
         res.status(404).json({
           error: {
-            code: ERROR_CODE_NOT_FOUND,
+            code: TRIAGE_ERROR_NOT_FOUND,
             message: `Triage document or finding '${id}' not found`,
             detail: { id },
           },
@@ -226,7 +226,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       if (result === "BAD_REQUEST") {
         res.status(400).json({
           error: {
-            code: ERROR_CODE_BAD_REQUEST,
+            code: TRIAGE_ERROR_BAD_REQUEST,
             message: "Bad request",
             detail: { id },
           },
@@ -250,7 +250,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
     if (!parseResult.success) {
       res.status(400).json({
         error: {
-          code: ERROR_CODE_BAD_REQUEST,
+          code: TRIAGE_ERROR_BAD_REQUEST,
           message: "Invalid request body",
           detail: {},
         },
@@ -270,7 +270,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       if (result === "NOT_FOUND") {
         res.status(404).json({
           error: {
-            code: ERROR_CODE_NOT_FOUND,
+            code: TRIAGE_ERROR_NOT_FOUND,
             message: `Triage document or finding '${id}' not found`,
             detail: { id },
           },
@@ -281,7 +281,7 @@ export function createTriageRouter(options: TriageRouterOptions = {}): Router {
       if (result === "BAD_REQUEST") {
         res.status(400).json({
           error: {
-            code: ERROR_CODE_BAD_REQUEST,
+            code: TRIAGE_ERROR_BAD_REQUEST,
             message: "Bad request",
             detail: { id },
           },

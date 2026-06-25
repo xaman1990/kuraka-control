@@ -277,6 +277,54 @@ export function parseTriageDoc(rawText: string): TriageDocWithoutId {
 // ── S5b-1: Surgical write helpers ─────────────────────────────────────────────
 
 /**
+ * Pure helper: scan body rows of the findings table for `findingId` and replace
+ * the cell at `column` with `value`.
+ *
+ * @param lines      full document split on "\n" (mutated copy, never the original).
+ * @param bodyStart  index of the first body row (after header + separator).
+ * @param findingId  exact id string to match (no case fold).
+ * @param column     2 (Routing) or 5 (Status) — 0-based column index.
+ * @param value      new plain text value; written with one space pad each side.
+ * @returns          updated lines array, or null when findingId is not found.
+ */
+function findAndReplaceRow(
+  lines: string[],
+  bodyStart: number,
+  findingId: string,
+  column: number,
+  value: string,
+): string[] | null {
+  for (let i = bodyStart; i < lines.length; i++) {
+    const raw = lines[i] ?? "";
+    const trimmed = raw.trim();
+
+    // Stop conditions (mirror parseTriageFindings).
+    if (trimmed === "") break;
+    if (trimmed.startsWith("##")) break;
+    if (!trimmed.startsWith("|")) break;
+
+    const rowCells = splitPipeLine(trimmed);
+    const rowId = emptyToNull(stripBold(rowCells[0] ?? ""));
+
+    if (rowId !== findingId) continue;
+
+    // Surgical replace on the ORIGINAL raw line (not the trimmed/normalized cells).
+    const parts = raw.split("|");
+    const idx = column + 1;  // col 2 (Routing) → idx 3; col 5 (Status) → idx 6
+
+    // Short row: target cell absent → degrade, return null (not-found).
+    if (idx >= parts.length) return null;
+
+    parts[idx] = ` ${value} `;      // plain value, ONE space pad each side, NO **bold**
+    lines[i] = parts.join("|");     // replace ONLY this line
+    return lines;
+  }
+
+  // No row matched.
+  return null;
+}
+
+/**
  * Surgical single-cell table rewrite (SCHEMA-FROZEN-S5b-1 §4).
  *
  * Replaces ONE cell in the findings table identified by `findingId` at
@@ -331,127 +379,13 @@ export function setFindingCell(
     }
   }
 
-  // D — scan body rows for the matching findingId.
-  for (let i = bodyStart; i < lines.length; i++) {
-    const raw = lines[i] ?? "";
-    const trimmed = raw.trim();
+  // D — scan body rows and replace; null return means no matching row.
+  const updated = findAndReplaceRow([...lines], bodyStart, findingId, column, value);
+  if (updated === null) return rawText;
 
-    // Stop conditions (mirror parseTriageFindings).
-    if (trimmed === "") break;
-    if (trimmed.startsWith("##")) break;
-    if (!trimmed.startsWith("|")) break;
-
-    const rowCells = splitPipeLine(trimmed);
-    const rowId = emptyToNull(stripBold(rowCells[0] ?? ""));
-
-    if (rowId !== findingId) continue;
-
-    // E — surgical replace on the ORIGINAL raw line L (not the trimmed/normalized cells).
-    const parts = raw.split("|");
-    const idx = column + 1;  // col 2 (Routing) → idx 3; col 5 (Status) → idx 6
-
-    // Short row: target cell absent → degrade, never throw.
-    if (idx >= parts.length) return rawText;
-
-    parts[idx] = ` ${value} `;      // plain value, ONE space pad each side, NO **bold**
-    lines[i] = parts.join("|");     // replace ONLY this line
-
-    // F — return updated text; all other lines byte-for-byte preserved.
-    return lines.join("\n");
-  }
-
-  // No row matched — return unchanged (service maps this to NOT_FOUND).
-  return rawText;
+  // E — return updated text; all other lines byte-for-byte preserved.
+  return updated.join("\n");
 }
 
-/**
- * Surgical frontmatter key rewrite (SCHEMA-FROZEN-S5b-1 §5).
- *
- * Replaces the `decision` line (and optionally `applied`) inside the
- * `---` frontmatter fence without touching any other line — including
- * `date`, `source`, `tags`.
- *
- * NOTE: NEVER uses matter.stringify (BLOCKER: coerces date:YYYY-MM-DD to
- * an ISO timestamp on round-trip). Operates on raw lines directly.
- *
- * @param rawText  full raw file content.
- * @param decision new value for the `decision:` key.
- * @param applied  optional boolean — when provided, also sets `applied:` key.
- * @returns        updated raw text. Returns rawText unchanged if no frontmatter block.
- */
-export function setFrontmatterDecision(
-  rawText: string,
-  decision: string,
-  applied?: boolean,
-): string {
-  // A — split into lines.
-  let lines = rawText.split("\n");
-
-  // B — check opening fence.
-  if ((lines[0]?.trim() ?? "") !== "---") {
-    return rawText;  // no frontmatter — no-op
-  }
-
-  // C — find closing fence (first line >= index 1 that is "---").
-  let closeIdx = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if ((lines[i]?.trim() ?? "") === "---") {
-      closeIdx = i;
-      break;
-    }
-  }
-  if (closeIdx === -1) {
-    return rawText;  // unclosed frontmatter — no-op
-  }
-
-  // D — set `decision` key.
-  lines = setFrontmatterKey(lines, 0, closeIdx, "decision", decision);
-
-  // E — optionally set `applied` key.
-  // Re-find closeIdx in case an insert in step D shifted it by 1.
-  if (applied !== undefined) {
-    let newCloseIdx = -1;
-    for (let i = 1; i < lines.length; i++) {
-      if ((lines[i]?.trim() ?? "") === "---") {
-        newCloseIdx = i;
-        break;
-      }
-    }
-    if (newCloseIdx !== -1) {
-      lines = setFrontmatterKey(lines, 0, newCloseIdx, "applied", String(applied));
-    }
-  }
-
-  // F — return updated text.
-  return lines.join("\n");
-}
-
-/**
- * Internal helper: replace or insert a `key: value` line inside the frontmatter fence.
- * Scans lines[openIdx+1 .. closeIdx-1]; on first match, replaces. If no match, inserts
- * just before the closing fence line.
- *
- * Returns a NEW lines array (never mutates in place).
- */
-function setFrontmatterKey(
-  lines: string[],
-  openIdx: number,
-  closeIdx: number,
-  key: string,
-  value: string,
-): string[] {
-  const keyRegex = new RegExp(`^(\\s*${key}\\s*:)\\s*.*$`);
-  const result = [...lines];
-
-  for (let i = openIdx + 1; i < closeIdx; i++) {
-    const line = result[i] ?? "";
-    if (keyRegex.test(line)) {
-      result[i] = line.replace(keyRegex, `$1 ${value}`);
-      return result;
-    }
-  }
-
-  // Key not found — insert just before the closing fence.
-  result.splice(closeIdx, 0, `${key}: ${value}`);
-  return result;
-}
+// Re-export frontmatter rewriters — extracted to triageFrontmatter.ts for LOC limits.
+export { setFrontmatterDecision } from "./triageFrontmatter.js";

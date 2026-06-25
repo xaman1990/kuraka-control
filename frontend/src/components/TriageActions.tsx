@@ -4,6 +4,8 @@ import type { TriageFinding } from "@kuraka-control/contracts";
 import {
   TRIAGE_ERROR_PATH_FORBIDDEN,
   TRIAGE_ERROR_WRITE_FAILED,
+  TRIAGE_ERROR_NOT_FOUND,
+  TRIAGE_ERROR_BAD_REQUEST,
 } from "@kuraka-control/contracts";
 import { routeFinding, deferTriage, rejectTriage } from "../api/triage.js";
 import type { TriageActionError } from "../api/triage.js";
@@ -24,9 +26,9 @@ function ActionError({ error }: ActionErrorProps) {
     message = "Write not permitted (path forbidden).";
   } else if (e?.code === TRIAGE_ERROR_WRITE_FAILED) {
     message = "Write failed — check vault permissions.";
-  } else if (e?.code === "NOT_FOUND") {
+  } else if (e?.code === TRIAGE_ERROR_NOT_FOUND) {
     message = "Finding not found.";
-  } else if (e?.code === "BAD_REQUEST") {
+  } else if (e?.code === TRIAGE_ERROR_BAD_REQUEST) {
     message = "Invalid request.";
   } else if (e?.message) {
     message = e.message;
@@ -184,5 +186,82 @@ export function DocLevelActions({ docId }: DocLevelActionsProps) {
       {deferMutation.isError && <ActionError error={deferMutation.error} />}
       {rejectMutation.isError && <ActionError error={rejectMutation.error} />}
     </div>
+  );
+}
+
+// ── FindingDeferRejectControl — per-row Defer + Reject buttons ─────────────────
+
+export interface FindingDeferRejectControlProps {
+  docId: string;
+  findingId: string;
+}
+
+/**
+ * FindingDeferRejectControl — per-row Defer and Reject buttons in the findings table.
+ * Calls deferTriage / rejectTriage with the finding_id. Disables while in flight.
+ * Shows inline error on failure. Invalidates ["triage"] on success.
+ */
+export function FindingDeferRejectControl({ docId, findingId }: FindingDeferRejectControlProps) {
+  const queryClient = useQueryClient();
+
+  const deferMutation = useMutation({
+    mutationFn: () => deferTriage(docId, { finding_id: findingId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["triage"] });
+    },
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => rejectTriage(docId, { finding_id: findingId }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["triage"] });
+    },
+  });
+
+  const anyPending = deferMutation.isPending || rejectMutation.isPending;
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", flexWrap: "wrap" }}>
+      <button
+        type="button"
+        onClick={() => deferMutation.mutate()}
+        disabled={anyPending || !findingId}
+        aria-disabled={anyPending || !findingId}
+        style={{
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "4px",
+          border: "1px solid var(--border)",
+          background: "var(--surface-2)",
+          color: "var(--text-2)",
+          cursor: anyPending ? "wait" : "pointer",
+          opacity: anyPending ? 0.6 : 1,
+        }}
+      >
+        {deferMutation.isPending ? "…" : "Defer"}
+      </button>
+
+      <button
+        type="button"
+        onClick={() => rejectMutation.mutate()}
+        disabled={anyPending || !findingId}
+        aria-disabled={anyPending || !findingId}
+        style={{
+          fontSize: "11px",
+          padding: "2px 8px",
+          borderRadius: "4px",
+          border: "1px solid var(--accent)",
+          background: "var(--surface-2)",
+          color: "var(--accent)",
+          cursor: anyPending ? "wait" : "pointer",
+          opacity: anyPending ? 0.6 : 1,
+        }}
+      >
+        {rejectMutation.isPending ? "…" : "Reject"}
+      </button>
+
+      {deferMutation.isError && <ActionError error={deferMutation.error} />}
+      {rejectMutation.isError && <ActionError error={rejectMutation.error} />}
+    </span>
   );
 }

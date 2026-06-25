@@ -234,3 +234,5 @@ export type TriageActionResponse = z.infer<typeof TriageActionResponse>;
 // Error-code constants (frontend checks by constant, not string literal).
 export const TRIAGE_ERROR_WRITE_FAILED = "WRITE_FAILED" as const;
 export const TRIAGE_ERROR_PATH_FORBIDDEN = "PATH_FORBIDDEN" as const;
+export const TRIAGE_ERROR_NOT_FOUND = "NOT_FOUND" as const;
+export const TRIAGE_ERROR_BAD_REQUEST = "BAD_REQUEST" as const;
