@@ -10,6 +10,11 @@ import {
 import { routeFinding, deferTriage, rejectTriage } from "../api/triage.js";
 import type { TriageActionError } from "../api/triage.js";
 
+// Re-export FindingApplyControl from its own module (extracted to keep this
+// file under the 300 LOC max_frontend_file_loc limit).
+export { FindingApplyControl } from "./FindingApplyControl.js";
+export type { FindingApplyControlProps } from "./FindingApplyControl.js";
+
 // ── Inline error display ──────────────────────────────────────────────────────
 
 interface ActionErrorProps {

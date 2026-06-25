@@ -4,12 +4,16 @@ import {
   TriageRouteRequest,
   TriageDeferRequest,
   TriageRejectRequest,
+  TriageApplyRequest,
+  TRIAGE_ERROR_CONFIRM_REQUIRED,
+  TRIAGE_ERROR_CONFLICT,
 } from "@kuraka-control/contracts";
 import type {
   TriageRouteRequest as TriageRouteRequestType,
   TriageDeferRequest as TriageDeferRequestType,
   TriageRejectRequest as TriageRejectRequestType,
   TriageActionResponse as TriageActionResponseType,
+  TriageApplyRequest as TriageApplyRequestType,
 } from "@kuraka-control/contracts";
 
 // ── Typed action error ─────────────────────────────────────────────────────────
@@ -119,6 +123,75 @@ export async function rejectTriage(
 ): Promise<TriageActionResponseType> {
   const validated = TriageRejectRequest.parse(body);
   const res = await fetch(`/api/triage/${encodeURIComponent(id)}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(validated),
+  });
+
+  if (!res.ok) {
+    const errBody = await extractErrorBody(res);
+    throw buildActionError(errBody, res.status);
+  }
+
+  const json = await res.json();
+  return TriageActionResponse.parse(json);
+}
+
+// ── Apply typed results ────────────────────────────────────────────────────────
+
+/** Detail shape returned by the backend on 403 CONFIRM_REQUIRED. */
+export interface ConfirmRequiredDetail {
+  id: string;
+  finding_id: string;
+  target_file: string;
+  confirm_token: string;
+  expires_at: string;
+}
+
+/** Typed error subclass for CONFIRM_REQUIRED (403) — carries the token detail. */
+export interface ConfirmRequiredError extends TriageActionError {
+  code: typeof TRIAGE_ERROR_CONFIRM_REQUIRED;
+  detail: ConfirmRequiredDetail;
+}
+
+/** Detail shape returned by the backend on 409 CONFLICT. */
+export interface ConflictDetail {
+  target_file: string;
+  conflicting_card: { id: string; finding_id: string | null };
+}
+
+/** Typed error subclass for CONFLICT (409). */
+export interface ConflictError extends TriageActionError {
+  code: typeof TRIAGE_ERROR_CONFLICT;
+  detail: ConflictDetail;
+}
+
+export function isConfirmRequiredError(err: unknown): err is ConfirmRequiredError {
+  const e = err as TriageActionError | null;
+  return e?.code === TRIAGE_ERROR_CONFIRM_REQUIRED && e?.detail != null;
+}
+
+export function isConflictError(err: unknown): err is ConflictError {
+  const e = err as TriageActionError | null;
+  return e?.code === TRIAGE_ERROR_CONFLICT && e?.detail != null;
+}
+
+/**
+ * applyFinding — POST /api/triage/:id/apply
+ *
+ * Project-routed finding: supply only `finding_id` — succeeds in one step.
+ * Framework-routed finding without token: throws ConfirmRequiredError (403)
+ *   carrying `confirm_token`, `target_file`, `expires_at` so the caller can
+ *   open ConfirmApplyModal and re-POST with the token.
+ * On 409 CONFLICT: throws ConflictError carrying `conflicting_card`.
+ * On 200: returns the freshly re-read TriageDoc (disk truth).
+ */
+export async function applyFinding(
+  id: string,
+  body: TriageApplyRequestType,
+): Promise<TriageActionResponseType> {
+  const validated = TriageApplyRequest.parse(body);
+  const res = await fetch(`/api/triage/${encodeURIComponent(id)}/apply`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(validated),

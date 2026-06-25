@@ -6,7 +6,7 @@ import { fetchTriage } from "../api/triage.js";
 import { AppShell } from "../components/AppShell.js";
 import { Badge } from "../components/Badge.js";
 import { RoutingBadge, severityVariant } from "../components/TriageCard.js";
-import { DocLevelActions, FindingRoutingControl, FindingDeferRejectControl } from "../components/TriageActions.js";
+import { DocLevelActions, FindingRoutingControl, FindingDeferRejectControl, FindingApplyControl } from "../components/TriageActions.js";
 
 // ── Status badge helper ───────────────────────────────────────────────────────
 
@@ -180,6 +180,7 @@ function FindingsTable({ doc }: { doc: TriageDoc }) {
                 <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
                   <FindingRoutingControl docId={doc.id} finding={f} />
                   <FindingDeferRejectControl docId={doc.id} findingId={f.id ?? ""} />
+                  <FindingApplyControl docId={doc.id} finding={f} />
                 </span>
               </td>
             </tr>
