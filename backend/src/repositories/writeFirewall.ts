@@ -46,20 +46,31 @@ export class WriteFirewallError extends Error {
  * Each write class entry declares:
  *  - id: human label used in error messages
  *  - filenameRegex: basename allowlist
+ *  - requiresConfirmToken: (optional) when true the caller must verify a confirm
+ *    token BEFORE invoking the write function. S5b-2 declares this on framework_patch
+ *    as a gate-defining metadata entry; the active refusal is the NEXT story's BLOCKER
+ *    (no writeFrameworkPatch function exists in S5b-2 — the entry is inert at the
+ *    write surface this cut per SCHEMA-FROZEN-S5b-2 §0 / §6).
  *
- * S5b-2 adds framework_patch / project_patch entries here without re-cutting
- * writeTriageRecord. The function is generic over any WRITE_CLASSES entry but
- * callers in S5b-1 only ever pass the triage_record class.
+ * S5b-2 adds the framework_patch entry without changing the writeTriageRecord surface.
+ * writeTriageRecord hardcodes WRITE_CLASSES["triage_record"]; no code path reads
+ * framework_patch during apply in this cut (transition-only intent confirmed §0).
  */
 interface WriteClass {
   id: string;
   filenameRegex: RegExp;
+  requiresConfirmToken?: boolean; // NEW — optional; only framework_patch sets it
 }
 
-const WRITE_CLASSES: Record<string, WriteClass> = {
+export const WRITE_CLASSES: Record<string, WriteClass> = {
   triage_record: {
     id: "triage_record",
     filenameRegex: TRIAGE_FILENAME_REGEX,
+  },
+  framework_patch: {                              // NEW (gate-defining; write path RESERVED for next cut)
+    id: "framework_patch",
+    filenameRegex: /^[a-z0-9_-]+\.md$/,          // agents/<name>.md basename allowlist
+    requiresConfirmToken: true,
   },
 };
 

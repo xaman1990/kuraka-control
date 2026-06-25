@@ -236,3 +236,20 @@ export const TRIAGE_ERROR_WRITE_FAILED = "WRITE_FAILED" as const;
 export const TRIAGE_ERROR_PATH_FORBIDDEN = "PATH_FORBIDDEN" as const;
 export const TRIAGE_ERROR_NOT_FOUND = "NOT_FOUND" as const;
 export const TRIAGE_ERROR_BAD_REQUEST = "BAD_REQUEST" as const;
+
+// ---- S5b-2: RETRO apply (RL-4 confirm-token / RL-5 conflict) ----------------
+// App-OWNED transition vocabulary → z.enum is the LL-008 EXCEPTION (precedent:
+// DriftState / Governance / TriageRouting are already z.enum in this file).
+export const RetroState = z.enum([
+  "SinTriar", "Enrutado", "Aplicado", "Diferido", "Rechazado", "ApplyFailed",
+]);
+export type RetroState = z.infer<typeof RetroState>;
+
+export const TriageApplyRequest = z.object({
+  finding_id: z.string().optional(),    // present = finding-scoped (the supported path)
+  confirm_token: z.string().optional(), // required only for a framework-routed finding
+});
+export type TriageApplyRequest = z.infer<typeof TriageApplyRequest>;
+
+export const TRIAGE_ERROR_CONFIRM_REQUIRED = "CONFIRM_REQUIRED" as const;
+export const TRIAGE_ERROR_CONFLICT = "CONFLICT" as const;

@@ -132,9 +132,9 @@ describe("routeFinding — sets routing cell (col 2) for a known finding_id", ()
     // Assert — result is a TriageDoc, not a sentinel
     expect(result).not.toBe("NOT_FOUND");
     expect(result).not.toBe("BAD_REQUEST");
-    if (result === "NOT_FOUND" || result === "BAD_REQUEST") return;
+    if (result === "NOT_FOUND" || result === "BAD_REQUEST" || typeof result !== "object" || !("findings" in result)) return;
     // Routing updated
-    const p1 = result.findings.find((f) => f.id === "P1");
+    const p1 = result.findings.find((f: { id: string | null }) => f.id === "P1");
     expect(p1).toBeDefined();
     expect(p1!.routing).toBe("framework");
   });
@@ -306,8 +306,8 @@ describe("deferTriage — finding-level: sets status cell to 'deferred'", () => 
     // Assert — P1 status updated
     expect(result).not.toBe("NOT_FOUND");
     expect(result).not.toBe("BAD_REQUEST");
-    if (result === "NOT_FOUND" || result === "BAD_REQUEST") return;
-    const p1 = result.findings.find((f) => f.id === "P1");
+    if (result === "NOT_FOUND" || result === "BAD_REQUEST" || typeof result !== "object" || !("findings" in result)) return;
+    const p1 = result.findings.find((f: { id: string | null }) => f.id === "P1");
     expect(p1!.status).toBe("deferred");
   });
 
@@ -377,7 +377,7 @@ describe("deferTriage — card-level: sets frontmatter decision to 'deferred'", 
     // Assert — decision updated
     expect(result).not.toBe("NOT_FOUND");
     expect(result).not.toBe("BAD_REQUEST");
-    if (result === "NOT_FOUND" || result === "BAD_REQUEST") return;
+    if (result === "NOT_FOUND" || result === "BAD_REQUEST" || typeof result !== "object" || !("decision" in result)) return;
     expect(result.decision).toBe("deferred");
   });
 
@@ -440,8 +440,8 @@ describe("rejectTriage — finding-level: sets status cell to 'rejected'", () =>
     // Assert
     expect(result).not.toBe("NOT_FOUND");
     expect(result).not.toBe("BAD_REQUEST");
-    if (result === "NOT_FOUND" || result === "BAD_REQUEST") return;
-    const p1 = result.findings.find((f) => f.id === "P1");
+    if (result === "NOT_FOUND" || result === "BAD_REQUEST" || typeof result !== "object" || !("findings" in result)) return;
+    const p1 = result.findings.find((f: { id: string | null }) => f.id === "P1");
     expect(p1!.status).toBe("rejected");
   });
 
@@ -485,7 +485,7 @@ describe("rejectTriage — card-level: sets frontmatter decision to 'rejected'",
     // Assert
     expect(result).not.toBe("NOT_FOUND");
     expect(result).not.toBe("BAD_REQUEST");
-    if (result === "NOT_FOUND" || result === "BAD_REQUEST") return;
+    if (result === "NOT_FOUND" || result === "BAD_REQUEST" || typeof result !== "object" || !("decision" in result)) return;
     expect(result.decision).toBe("rejected");
   });
 
