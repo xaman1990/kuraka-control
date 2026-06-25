@@ -1,5 +1,6 @@
 /**
- * Unit tests for parseTriageFindings and parseTriageDoc (domain layer).
+ * Unit tests for parseTriageFindings, parseTriageDoc, setFindingCell,
+ * and setFrontmatterDecision (domain layer — S5a + S5b-1).
  *
  * Pure functions — no mocks, no fs, no env.
  *
@@ -13,11 +14,16 @@
  *   - rationale capture: text under ## Decisions & rationale, ## Follow-up excluded
  *   - frontmatter: applied non-boolean → null; tags absent → []; empty decision → null
  *   - missing-table → findings: []
+ *   - S5b-1 setFindingCell: routing col (2) + status col (5); byte preservation; idempotency;
+ *     not-found no-op; bold-wrapped sibling cells preserved verbatim
+ *   - S5b-1 setFrontmatterDecision: decision replaced; date/tags/source byte-preserved
+ *     (BLOCKER regression guard); key absent → inserted; applied updated
  *
- * Algorithm: SCHEMA-FROZEN-S5a §3 (LL-011).
+ * Algorithm: SCHEMA-FROZEN-S5a §3 + SCHEMA-FROZEN-S5b-1 §4/§5 (LL-011).
  */
 import { describe, it, expect } from "vitest";
-import { parseTriageFindings, parseTriageDoc } from "./triage.js";
+import { parseTriageFindings, parseTriageDoc, setFindingCell } from "./triage.js";
+import { setFrontmatterDecision } from "./triageFrontmatter.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -942,5 +948,526 @@ describe("parseTriageDoc — full happy path (live card structure)", () => {
     expect(result.rationale).toContain("P1 was addressed");
     expect(result.rationale).toContain("deferred to next cycle");
     expect(result.rationale).not.toContain("Track P2");
+  });
+});
+
+// ===========================================================================
+// S5b-1: setFindingCell — surgical single-cell table rewrite
+// (SCHEMA-FROZEN-S5b-1 §4 — column + 1 offset, byte preservation, idempotency)
+// ===========================================================================
+
+/**
+ * Builds a raw doc with a real frontmatter block (to verify frontmatter is
+ * NOT touched by setFindingCell — it operates on the whole raw text via
+ * line scan, passing frontmatter lines through untouched).
+ */
+function _makeRawDocForRewrite(rows: string[]): string {
+  const header = "| # | Finding | Routing | Target file | Severity | Status |";
+  const separator = "|---|---------|---------|-------------|----------|--------|";
+  return [
+    "---",
+    "project: sie_v2",
+    "source: RETRO-2026-06-06",
+    'date: "2026-06-06"',
+    "decision: pending",
+    "applied: false",
+    "tags:",
+    "  - retro-triage",
+    "---",
+    "",
+    header,
+    separator,
+    ...rows,
+    "",
+  ].join("\n");
+}
+
+describe("setFindingCell — col 2 (Routing): rewrites routing cell for matching finding_id", () => {
+  it("should replace the routing cell for a known finding_id and return updated text", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | Bug in backend | project | `agents/x.md` | HIGH | applied |",
+      "| P2 | Drift issue | **framework** | `agents/y.md` | MED | pending |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — P1 routing changed to "framework"
+    const lines = result.split("\n");
+    const p1Line = lines.find((l) => l.includes("| P1 |") && l.includes("|"));
+    expect(p1Line).toBeDefined();
+    const parts = (p1Line ?? "").split("|");
+    // col 2 → idx 3: routing cell
+    expect(parts[3]?.trim()).toBe("framework");
+  });
+
+  it("should update routing col (split-index 3) to the new value with one space padding", () => {
+    // Arrange — verify the exact padding: " framework " (one space each side)
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — exact format: space + value + space at split-index 3
+    const targetLine = result.split("\n").find((l) => l.includes("| P1 |"))!;
+    const parts = targetLine.split("|");
+    expect(parts[3]).toBe(" framework "); // exact: one space each side
+  });
+});
+
+describe("setFindingCell — col 5 (Status): rewrites status cell for matching finding_id", () => {
+  it("should replace the status cell (col 5, split-index 6) for a known finding_id", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A bug | project | `x.md` | HIGH | pending |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 5, "deferred");
+
+    // Assert — status cell updated
+    const targetLine = result.split("\n").find((l) => l.includes("| P1 |"))!;
+    const parts = targetLine.split("|");
+    expect(parts[6]).toBe(" deferred "); // split-index 6, one space each side
+  });
+
+  it("should replace status cell with 'rejected' for a card-level reject flow", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P2 | Drift issue | **framework** | `y.md` | MED | pending |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P2", 5, "rejected");
+
+    // Assert
+    const targetLine = result.split("\n").find((l) => l.includes("| P2 |"))!;
+    const parts = targetLine.split("|");
+    expect(parts[6]).toBe(" rejected ");
+  });
+});
+
+describe("setFindingCell — byte preservation: ALL other cells and lines unchanged", () => {
+  it("should preserve all sibling cells byte-for-byte after routing update", () => {
+    // Arrange — P2 has a bold routing cell; after editing P1, P2 must be byte-identical
+    const p1Row = "| P1 | A finding | project | `x.md` | HIGH | applied |";
+    const p2Row = "| P2 | Another finding | **framework** | `agents/y.md` | MED | pending |";
+    const raw = _makeRawDocForRewrite([p1Row, p2Row]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — P2 row is byte-for-byte identical to the original
+    const resultLines = result.split("\n");
+    const p2Index = resultLines.findIndex((l) => l.includes("| P2 |"));
+    expect(resultLines[p2Index]).toBe(p2Row);
+  });
+
+  it("should preserve the frontmatter block byte-for-byte after routing update", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+    ]);
+    const rawLines = raw.split("\n");
+    // Extract frontmatter lines (lines 0..8 = opening --- to closing ---)
+    const fmLines = rawLines.slice(0, 9);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+    const resultLines = result.split("\n");
+    const resultFmLines = resultLines.slice(0, 9);
+
+    // Assert — frontmatter lines byte-for-byte identical
+    expect(resultFmLines).toEqual(fmLines);
+  });
+
+  it("should preserve the date line EXACTLY (BLOCKER regression guard — must NOT coerce to ISO)", () => {
+    // Arrange — the critical regression: gray-matter coerces date: 2026-06-06 to ISO.
+    // setFindingCell MUST NOT touch the frontmatter, so date must survive verbatim.
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — the literal date line is preserved (no ISO coercion)
+    expect(result).toContain('date: "2026-06-06"');
+    expect(result).not.toMatch(/date:.*T00:00:00/);
+  });
+
+  it("should return text that differs from original in exactly ONE line (the targeted row)", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+      "| P2 | Another | **framework** | `y.md` | MED | pending |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — exactly one line differs
+    const rawLines = raw.split("\n");
+    const resultLines = result.split("\n");
+    expect(rawLines.length).toBe(resultLines.length);
+    const changedLines = rawLines.filter((l, i) => l !== resultLines[i]);
+    expect(changedLines).toHaveLength(1); // exactly one line changed
+  });
+
+  it("should preserve backtick-wrapped target_file cell verbatim (no normalization)", () => {
+    // Arrange — target_file with backtick wrapper
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `path/to/file.md` | HIGH | applied |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — backtick wrapper is preserved exactly
+    const targetLine = result.split("\n").find((l) => l.includes("| P1 |"))!;
+    expect(targetLine).toContain("`path/to/file.md`");
+  });
+});
+
+describe("setFindingCell — idempotency: applying twice produces the same output", () => {
+  it("should return the same text when called twice with the same args (col 2)", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+    ]);
+
+    // Act — apply twice
+    const once = setFindingCell(raw, "P1", 2, "framework");
+    const twice = setFindingCell(once, "P1", 2, "framework");
+
+    // Assert — idempotent
+    expect(twice).toBe(once);
+  });
+
+  it("should return the same text when called twice with the same args (col 5)", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | pending |",
+    ]);
+
+    // Act — apply twice
+    const once = setFindingCell(raw, "P1", 5, "deferred");
+    const twice = setFindingCell(once, "P1", 5, "deferred");
+
+    // Assert — idempotent
+    expect(twice).toBe(once);
+  });
+});
+
+describe("setFindingCell — not-found: unknown finding_id returns rawText unchanged", () => {
+  it("should return rawText unchanged when findingId does not match any row", () => {
+    // Arrange
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P99", 2, "framework");
+
+    // Assert — exact reference equality (no-op returns the original)
+    expect(result).toBe(raw);
+  });
+
+  it("should return rawText unchanged when the table header is missing", () => {
+    // Arrange — no table at all
+    const raw = "---\nproject: sie_v2\n---\n\nSome prose text.";
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert
+    expect(result).toBe(raw);
+  });
+
+  it("should return rawText unchanged when findingId has wrong case (case-sensitive match)", () => {
+    // Arrange — row has "P1", we search for "p1" (lowercase)
+    const raw = _makeRawDocForRewrite([
+      "| P1 | A finding | project | `x.md` | HIGH | applied |",
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "p1", 2, "framework");
+
+    // Assert — case-sensitive: "p1" !== "P1" → no-op
+    expect(result).toBe(raw);
+  });
+});
+
+describe("setFindingCell — bold-wrapped cells in other positions preserved", () => {
+  it("should keep **bold** routing in P2 when editing P1 routing", () => {
+    // Arrange — P2 has **framework** (bold) routing; only P1 is targeted
+    const p2Row = "| P2 | Drift | **framework** | `y.md` | MED | pending |";
+    const raw = _makeRawDocForRewrite([
+      "| P1 | Bug | project | `x.md` | HIGH | applied |",
+      p2Row,
+    ]);
+
+    // Act
+    const result = setFindingCell(raw, "P1", 2, "framework");
+
+    // Assert — P2's **framework** bold is preserved byte-for-byte
+    expect(result).toContain(p2Row);
+    const p2Line = result.split("\n").find((l) => l.includes("| P2 |"))!;
+    expect(p2Line.split("|")[3]).toBe(" **framework** "); // original cell preserved
+  });
+});
+
+describe("setFindingCell — short row degrade: missing target cell → no-op (never throw)", () => {
+  it("should return rawText unchanged when the target column cell is absent (short row at col 5)", () => {
+    // Arrange — row with only 3 cells; col 5 (split-idx 6) is absent
+    const header = "| # | Finding | Routing | Target file | Severity | Status |";
+    const sep = "|---|---|---|---|---|---|";
+    const shortRow = "| P1 | Short finding | project |";
+    const raw = `---\nproject: x\n---\n\n${header}\n${sep}\n${shortRow}\n`;
+
+    // Act — should not throw; returns raw unchanged
+    expect(() => setFindingCell(raw, "P1", 5, "deferred")).not.toThrow();
+    const result = setFindingCell(raw, "P1", 5, "deferred");
+    expect(result).toBe(raw);
+  });
+});
+
+// ===========================================================================
+// S5b-1: setFrontmatterDecision — surgical frontmatter key rewrite
+// (SCHEMA-FROZEN-S5b-1 §5 — BLOCKER: never uses matter.stringify)
+// ===========================================================================
+
+/**
+ * Builds a raw doc with a real frontmatter block that has the exact structure
+ * from the live vault card — used to verify the BLOCKER regression guard.
+ */
+function _makeRawDocWithFrontmatter(overrides: {
+  decision?: string;
+  date?: string;
+  tags?: string;
+  source?: string;
+  extraKey?: string;
+} = {}): string {
+  const {
+    decision = "pending",
+    date = "2026-06-06",
+    tags = "  - retro-triage",
+    source = "RETRO-2026-06-06",
+    extraKey = "",
+  } = overrides;
+
+  const lines = [
+    "---",
+    "project: sie_v2",
+    `source: ${source}`,
+    `date: ${date}`,
+    `decision: ${decision}`,
+    "applied: false",
+    "tags:",
+    tags,
+    ...(extraKey ? [extraKey] : []),
+    "---",
+    "",
+    "| # | Finding | Routing | Target file | Severity | Status |",
+    "|---|---------|---------|-------------|----------|--------|",
+    "| P1 | A finding | project | `x.md` | HIGH | pending |",
+    "",
+    "## Decisions & rationale",
+    "",
+    "Some rationale text.",
+  ];
+  return lines.join("\n");
+}
+
+describe("setFrontmatterDecision — replaces decision key in frontmatter", () => {
+  it("should replace 'decision: pending' with 'decision: deferred'", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ decision: "pending" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — decision is updated
+    const decisionLine = result.split("\n").find((l) => l.startsWith("decision:"))!;
+    expect(decisionLine.trim()).toBe("decision: deferred");
+  });
+
+  it("should replace 'decision: pending' with 'decision: rejected'", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ decision: "pending" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "rejected");
+
+    // Assert
+    const decisionLine = result.split("\n").find((l) => l.startsWith("decision:"))!;
+    expect(decisionLine.trim()).toBe("decision: rejected");
+  });
+
+  it("should be idempotent: setting decision to the same value twice produces the same output", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ decision: "pending" });
+
+    // Act — apply twice
+    const once = setFrontmatterDecision(raw, "deferred");
+    const twice = setFrontmatterDecision(once, "deferred");
+
+    // Assert — idempotent
+    expect(twice).toBe(once);
+  });
+});
+
+describe("setFrontmatterDecision — BLOCKER regression guard: byte-preservation of other fields", () => {
+  it("should preserve the date line EXACTLY (BLOCKER: must NOT coerce to ISO timestamp)", () => {
+    // Arrange — the critical regression: matter.stringify coerces date: 2026-06-06 to ISO.
+    // setFrontmatterDecision must operate on raw lines and NEVER call matter.stringify.
+    const raw = _makeRawDocWithFrontmatter({ date: "2026-06-06" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — date line is byte-for-byte identical
+    const rawDateLine = raw.split("\n").find((l) => l.startsWith("date:"))!;
+    const resultDateLine = result.split("\n").find((l) => l.startsWith("date:"))!;
+    expect(resultDateLine).toBe(rawDateLine);
+    // Explicit check: must NOT contain ISO format
+    expect(result).not.toMatch(/date:.*T00:00:00/);
+    expect(result).toContain("date: 2026-06-06");
+  });
+
+  it("should preserve the source line byte-for-byte after decision update", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ source: "RETRO-2026-06-06" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — source is not re-quoted or changed
+    const rawSourceLine = raw.split("\n").find((l) => l.startsWith("source:"))!;
+    const resultSourceLine = result.split("\n").find((l) => l.startsWith("source:"))!;
+    expect(resultSourceLine).toBe(rawSourceLine);
+  });
+
+  it("should preserve the tags block byte-for-byte after decision update", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ tags: "  - retro-triage" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — tags is not reflowed (matter.stringify would change block→flow style)
+    expect(result).toContain("tags:\n  - retro-triage");
+  });
+
+  it("should preserve the body (findings table + rationale) byte-for-byte", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({});
+    // Extract body (everything after closing ---)
+    const fenceEnd = raw.indexOf("\n---\n", 4) + 5;
+    const originalBody = raw.slice(fenceEnd);
+
+    // Act
+    const result = setFrontmatterDecision(raw, "rejected");
+    const resultFenceEnd = result.indexOf("\n---\n", 4) + 5;
+    const resultBody = result.slice(resultFenceEnd);
+
+    // Assert — body is byte-for-byte identical
+    expect(resultBody).toBe(originalBody);
+  });
+
+  it("should change EXACTLY one line in the frontmatter block (the decision line)", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ decision: "pending" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — count changed lines
+    const rawLines = raw.split("\n");
+    const resultLines = result.split("\n");
+    expect(rawLines.length).toBe(resultLines.length); // no lines added or removed
+    const changedLines = rawLines.filter((l, i) => l !== resultLines[i]);
+    expect(changedLines).toHaveLength(1); // exactly one line changed
+    expect(changedLines[0]).toContain("decision:"); // the decision line
+  });
+});
+
+describe("setFrontmatterDecision — key absent: inserts decision before closing ---", () => {
+  it("should insert 'decision: deferred' when no decision key exists in frontmatter", () => {
+    // Arrange — frontmatter without a decision key
+    const raw = [
+      "---",
+      "project: sie_v2",
+      "date: 2026-06-06",
+      "---",
+      "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+    ].join("\n");
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — decision line is now present
+    const decisionLine = result.split("\n").find((l) => l.startsWith("decision:"));
+    expect(decisionLine).toBeDefined();
+    expect(decisionLine!.trim()).toBe("decision: deferred");
+    // Verify date is still present and unchanged
+    expect(result).toContain("date: 2026-06-06");
+  });
+});
+
+describe("setFrontmatterDecision — applied parameter: also sets applied key", () => {
+  it("should set both decision and applied when applied parameter is provided", () => {
+    // Arrange
+    const raw = _makeRawDocWithFrontmatter({ decision: "pending" });
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred", false);
+
+    // Assert — both updated
+    const decisionLine = result.split("\n").find((l) => l.startsWith("decision:"))!;
+    const appliedLine = result.split("\n").find((l) => l.startsWith("applied:"))!;
+    expect(decisionLine.trim()).toBe("decision: deferred");
+    expect(appliedLine.trim()).toBe("applied: false");
+  });
+
+  it("should NOT update applied when the applied parameter is omitted", () => {
+    // Arrange — original applied: false
+    const raw = _makeRawDocWithFrontmatter({ decision: "pending" });
+
+    // Act — no applied arg
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — applied line unchanged
+    const rawAppliedLine = raw.split("\n").find((l) => l.startsWith("applied:"))!;
+    const resultAppliedLine = result.split("\n").find((l) => l.startsWith("applied:"))!;
+    expect(resultAppliedLine).toBe(rawAppliedLine);
+  });
+});
+
+describe("setFrontmatterDecision — no-op when no frontmatter block", () => {
+  it("should return rawText unchanged when there is no opening --- fence", () => {
+    // Arrange
+    const raw = "# No frontmatter\n\nJust markdown.";
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — unchanged
+    expect(result).toBe(raw);
+  });
+
+  it("should return rawText unchanged when the frontmatter closing --- is missing", () => {
+    // Arrange — unclosed frontmatter
+    const raw = "---\nproject: sie_v2\ndecision: pending\n(no closing fence)";
+
+    // Act
+    const result = setFrontmatterDecision(raw, "deferred");
+
+    // Assert — unchanged
+    expect(result).toBe(raw);
   });
 });
