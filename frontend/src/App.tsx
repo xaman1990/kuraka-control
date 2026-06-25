@@ -4,13 +4,17 @@
  *   /                  — Landing (health probe)
  *   /showcase          — S12 design-system visual proof (Phase 6.8 smoke)
  *   /projects          — ProjectsPage (S1 registry)
- *   /projects/:name    — ProjectDetailShell (S1 placeholder)
+ *   /projects/:name    — ProjectDetailShell (S2 project detail)
+ *   /triage            — TriagePage (S5a RETRO triage board)
+ *   /triage/:id        — TriageDetailPage (S5a doc detail)
  */
 import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Showcase } from "./routes/Showcase.js";
 import { ProjectsPage } from "./routes/ProjectsPage.js";
 import { ProjectDetailShell } from "./routes/ProjectDetailShell.js";
+import { TriagePage } from "./routes/TriagePage.js";
+import { TriageDetailPage } from "./routes/TriageDetailPage.js";
 
 interface Health {
   ok: boolean;
@@ -78,6 +82,8 @@ export function App() {
         <Route path="/showcase" element={<Showcase />} />
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/:name" element={<ProjectDetailShell />} />
+        <Route path="/triage" element={<TriagePage />} />
+        <Route path="/triage/:id" element={<TriageDetailPage />} />
       </Routes>
     </BrowserRouter>
   );

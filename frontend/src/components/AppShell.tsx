@@ -27,7 +27,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "MEJORAR",
-    items: [{ label: "RETRO Triage" }, { label: "Insights" }],
+    items: [{ label: "RETRO Triage", href: "/triage" }, { label: "Insights" }],
   },
   {
     label: "SISTEMA",
