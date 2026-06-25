@@ -38,3 +38,8 @@ grow from retros.
       `stat`/`lstat`, NEVER via dirent type bits — on modern Node a symlink dirent reports
       `isFile()===false && isDirectory()===false`, so a two-predicate filter double-emits or
       drops it. Confirm no dirent can match both/neither classification branch. [S4 `walkLayerTree`]
+
+## 8. Frontend type-only imports [recurrence S4+S5a]
+- [ ] React types are imported by name as type-only — `import type { KeyboardEvent, ReactNode }
+      from "react"` — NEVER via the `React.X` namespace (`React.KeyboardEvent`, `React.ReactNode`).
+      Grep changed `.tsx`/`.ts` for `React\.[A-Z]` in type position; flag as MINOR.
