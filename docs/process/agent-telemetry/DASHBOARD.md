@@ -1,7 +1,7 @@
 # Kuraka Telemetry Dashboard
 
-_Updated: 2026-06-25 (hand-rolled after S5b-1; per-cycle JSON is gitignored)_
-_Cycles analyzed: 7_
+_Updated: 2026-06-27 (hand-rolled after S5b-2; per-cycle JSON is gitignored)_
+_Cycles analyzed: 8_
 
 ## Cycles
 
@@ -13,48 +13,55 @@ _Cycles analyzed: 7_
 | REQ-20260622-S3-project-config-tab | reduced (T3 combined 1+2) | 6 | 390,373 | ~33min |
 | REQ-20260624-S4-project-layer-browser | normal full + 5.5 Security | 10 | 688,437 | ~58min |
 | REQ-20260624-S5a-retro-triage-board | reduced (T3, read-only; S5 split) | 6 | 430,985 | ~30min |
-| REQ-20260625-S5b-1-triage-write-actions | normal full + 5.5 (first vault WRITE; S5b split) | 10 | 803,664 | ~40min |
+| REQ-20260625-S5b-1-triage-write-actions | normal full + 5.5 (first vault WRITE) | 10 | 803,664 | ~40min |
+| REQ-20260625-S5b-2-apply-confirm-conflict | normal full + 5.5 (HMAC confirm gate) | 8* | 852,159 | ~50min |
 
-**Token trend: S1 463 → S2 450 → S3 390 → S4 688 → S5a 431 → S5b-1 804K.** The two spikes (S4, S5b-1)
-are scope-driven (L / first-write + dedicated 5.5 + a fix loop + the largest test suites); the
-read-only/reduced cycles (S3, S5a) sit in the low band. Per-run tokens stay in-band throughout.
+\* S5b-2 total excludes the Phase-6 test-engineer run (token count lost to a mid-run session reset; suite verified green).
 
-## Per-agent aggregate (7 cycles)
+**Token trend (real-feature cycles): S1 463 → S2 450 → S3 390 → S4 688 → S5a 431 → S5b-1 804 → S5b-2 852K.**
+The three spikes (S4, S5b-1, S5b-2) are scope-driven — L complexity / first-write / highest-trust HMAC gate,
+each with a dedicated 5.5 + fix loops. Reduced/read-only cycles (S3, S5a) stay in the low band.
+
+## Per-agent aggregate (8 cycles; S5b-2 test-engineer tokens not captured)
 
 | Agent | Invocations | Total tokens |
 |-------|------------:|-------------:|
-| frontend-developer | 14 | 640,336 |
-| code-reviewer | 7 | 519,624 |
-| final-auditor | 6 | 506,864 |
-| test-engineer | 6 | 505,247 |
-| backend-developer | 9 | 463,057 |
-| po-analyst | 8 | 430,159 |
-| architect-reviewer | 6 | 392,876 |
-| story-refiner | 4 | 218,748 |
-| security-reviewer | 2 | 137,534 |
+| frontend-developer | 16 | 762,935 |
+| backend-developer | 11 | 746,273 |
+| final-auditor | 7 | 636,605 |
+| code-reviewer | 8 | 625,960 |
+| po-analyst | 9 | 518,004 |
+| test-engineer | 7 | ~505,247+ |
+| architect-reviewer | 7 | 493,527 |
+| story-refiner | 5 | 277,347 |
+| security-reviewer | 3 | 230,447 |
 
 ## Totals
 
-- Total tokens (7 cycles): **3,373,763**
-- Cycles: **7**
-- Avg tokens per cycle: **481,966**
+- Total tokens (8 cycles): **~4,225,922**
+- Cycles: **8**
+- Avg tokens per cycle: **~528,240**
 
 ## Notes
 
-- **Adversarial-freeze pattern — 2 consecutive PRE-CODE major catches**: S4 (Windows-drive `isAbsolute`
-  bypass on POSIX) and S5b-1 (`matter.stringify` corrupts the card `date` on every write). Both killed at
-  the schema freeze, zero rework. Codified: LL-013 + architect empirical-freeze check + code-review §9.
-- **First vault-WRITE (S5b-1)** shipped clean: dedicated 5.5 PASS (no CRITICAL), single-writer WriteFirewall,
-  atomic raw-line rewrite, smoke against a DISPOSABLE temp vault (real vault never written).
-- **Rule-0 splits** (S5→S5a/S5b, S5b→S5b-1/S5b-2) de-risked the read→write transition; both halves clean.
-- **Lessons compounding**: LL-007..013 + review-checks §6 (tokens), §7 (fs-walk symlinks), §8 (React type
-  imports — suppressed its own recurrence in S5b-1), §9 (structured-doc byte-preservation). The
-  mechanism-hedge thread is now a 3-form family: LL-011 (obvious fork) → LL-012 (platform-gated) → LL-013 (library-gated).
-- **pattern-detector**: DUE/approaching (7 RETROs; 2 since the S4 pass). Run before S5b-2. New input: the
-  adversarial-freeze pre-code-catch pattern (S4+S5b-1).
-- **Carried follow-ups**: canonical vault `VERSION` file; sidebar active-nav prefix-match; code-reviewer T1
-  digest (latency — note S5b-1's reviewers ran in-band, attributed to the precise frozen attack table);
-  date-formatting render polish (S5a).
+- **Adversarial freeze = 3 consecutive PRE-CODE major catches**: S4 (Windows-drive `isAbsolute` bypass),
+  S5b-1 (`matter.stringify` date corruption), S5b-2 (4 nullable-contract-field holes — null-target scope
+  collapse, RL-5 null-id self-exclude, timingSafeEqual length-guard, used-Set→Map TTL prune). Zero rework.
+- **First vault-WRITE path shipped clean across S5b-1/S5b-2**: WriteFirewall (single writer, atomic, byte-
+  preserving), HMAC confirm-token (RL-4) for framework apply, RL-5 conflict, RL-6 no-mount. 3 dedicated 5.5
+  security reviews (S4, S5b-1, S5b-2) all PASS, no CRITICAL — every vector live-verified vs temp vaults; the
+  real vault was never written in dev/test.
+- **Two process findings (S5b-2)**: (1) orchestrator temp-vault live-verify caught a runtime apply bug
+  (no-op→404) that green `make test` structurally couldn't (apply tests are Phase 6); (2) `make test` ≠
+  typecheck — an S4 `as string` error rode green ~3 cycles → **LL-014 + `make check` (lint+typecheck+test)**
+  now the Phase-4 green gate (it immediately caught a stray unused const on first use).
+- **Lessons**: LL-007..014 + review-checks §6–§9. Mechanism-hedge family is now 3-form (LL-011 obvious /
+  LL-012 platform / LL-013 library). `RetroState` z.enum is the LL-008 app-owned exception.
+- **pattern-detector OVERDUE** (8 RETROs; 3 since the S4 pass). Run before the next story. New threads:
+  adversarial-freeze pattern ×3, nullable-contract-field root cause (S5b-1/S5b-2), function-size recurrence.
+- **Next**: pattern-detector Pass 2 → gold-content-apply story (flip the inert firewall `framework_patch`
+  to an active token-enforced write) → S7 ACT runner (owns mount-to-ALL; must honor S5b-2's RL-6 no-mount).
+- Carried follow-ups: canonical vault `VERSION` file; sidebar active-nav prefix-match; date render polish (S5a).
 
 ---
 _Budget table lives in `.claude/skills/kuraka-policies.md` and `rules/17`._

@@ -535,9 +535,6 @@ describe("rejectTriage — card-level: sets frontmatter decision to 'rejected'",
 // applyTriage — helper builders for apply tests
 // ===========================================================================
 
-/** Fixed "now" for deterministic token TTL tests. */
-const APPLY_NOW = 1_750_000_100_000;
-
 /**
  * Card with a project-routed finding (P1) and a framework-routed finding (P2).
  * target_file fields are plain strings (backtick form) as the parser strips them.

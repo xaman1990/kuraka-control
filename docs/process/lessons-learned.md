@@ -217,6 +217,21 @@ inline (ahorra tokens en cada invocación).
   contra un archivo real antes de congelar. El `code-reviewer` confirma que ningún
   path de escritura llama a un serializador full-doc.
 
+## LL-014 — El gate de "verde" de la Fase 4 DEBE incluir typecheck, no solo `make test`
+
+- **REQ origen**: REQ-20260625-S5b-2 (descubierto en code review)
+- **Síntoma**: Un `as string` inválido en `projectLayer.test.ts` (introducido en S4)
+  sobrevivió ~3 ciclos con `make test` en verde — vitest transpila por archivo y NO
+  type-chequea el grafo, así que el error solo lo cazaba `tsc --noEmit` (que no estaba
+  en el gate). Lo descubrió el code review de S5b-2.
+- **Causa raíz**: el orquestador usaba `make test` como definición de "verde" de la
+  Fase 4, pero `make test` (vitest) ≠ typecheck. El build se rompía sin que ningún
+  gate lo marcara.
+- **Regla que aplica**: la definición de "verde" de cada story (Fase 4 y los fixes de
+  Fase 5/6) es **`make check`** (= `lint` + `typecheck` + `test`), NO solo `make test`.
+  El orquestador corre `make check` antes de commitear/declarar una story hecha; los
+  developers corren typecheck además de test. (Añadido el target `check` al Makefile.)
+
 ---
 
 ## Formato para nuevas lecciones
