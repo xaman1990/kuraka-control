@@ -27,3 +27,26 @@ grow from retros.
 ## 5. Layering
 - [ ] Routes don't touch fs/subprocess directly; only repositories do I/O.
 - [ ] `domain/` is pure (no fs/spawn/env).
+
+## 6. Frontend design tokens
+- [ ] Every CSS custom property a component references (`var(--x)`) is defined in
+      `frontend/src/theme/tokens.css` — a `var(--x, fallback)` silently relying on the
+      fallback because `--x` is undefined is a token-hygiene gap (MINOR). [S3 `--radius-card`]
+
+## 7. Filesystem walks (symlink classification) [LL-012]
+- [ ] An fs-walk that classifies entries (file vs dir) resolves symlinks via explicit
+      `stat`/`lstat`, NEVER via dirent type bits — on modern Node a symlink dirent reports
+      `isFile()===false && isDirectory()===false`, so a two-predicate filter double-emits or
+      drops it. Confirm no dirent can match both/neither classification branch. [S4 `walkLayerTree`]
+
+## 8. Frontend type-only imports [recurrence S4+S5a]
+- [ ] React types are imported by name as type-only — `import type { KeyboardEvent, ReactNode }
+      from "react"` — NEVER via the `React.X` namespace (`React.KeyboardEvent`, `React.ReactNode`).
+      Grep changed `.tsx`/`.ts` for `React\.[A-Z]` in type position; flag as MINOR.
+
+## 9. Structured-doc writes preserve bytes [LL-013]
+- [ ] Any code path that WRITES a structured document (frontmatter, markdown table, JSON, YAML)
+      mutates via a surgical raw-line/region edit and does NOT round-trip through
+      `matter.stringify` / `JSON.stringify` / `yaml.stringify` (or any serializer that re-emits the
+      whole doc — they coerce/reflow untouched fields, e.g. `matter.stringify` turns a YAML date into
+      a `Date` and reflows arrays). Grep the write path for `.stringify(`; a hit on the document = BLOCKER. [S5b-1 `matter.stringify`]

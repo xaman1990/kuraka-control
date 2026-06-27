@@ -1,9 +1,20 @@
 /**
- * App shell — skeleton seeded by arki. Real screens (Monitor, Project Detail,
- * Triage, Agentes, Onboard) and routing arrive via /kuraka cycles, starting
- * with S12 (design system) then S1 (registry → projects list/detail).
+ * App shell — bootstraps react-router-dom v6.
+ * Routes:
+ *   /                  — Landing (health probe)
+ *   /showcase          — S12 design-system visual proof (Phase 6.8 smoke)
+ *   /projects          — ProjectsPage (S1 registry)
+ *   /projects/:name    — ProjectDetailShell (S2 project detail)
+ *   /triage            — TriagePage (S5a RETRO triage board)
+ *   /triage/:id        — TriageDetailPage (S5a doc detail)
  */
+import { BrowserRouter, Routes, Route, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Showcase } from "./routes/Showcase.js";
+import { ProjectsPage } from "./routes/ProjectsPage.js";
+import { ProjectDetailShell } from "./routes/ProjectDetailShell.js";
+import { TriagePage } from "./routes/TriagePage.js";
+import { TriageDetailPage } from "./routes/TriageDetailPage.js";
 
 interface Health {
   ok: boolean;
@@ -12,7 +23,7 @@ interface Health {
   vaultReadable: boolean;
 }
 
-export function App() {
+function Landing() {
   const { data, isLoading, isError } = useQuery<Health>({
     queryKey: ["health"],
     queryFn: async () => {
@@ -36,6 +47,18 @@ export function App() {
       <p style={{ color: "var(--text-2)" }}>
         Control plane skeleton. Screens arrive via <code>/kuraka</code> cycles.
       </p>
+      <p style={{ color: "var(--text-2)", marginTop: "1rem" }}>
+        <Link to="/showcase" style={{ color: "var(--jade)" }}>
+          /showcase
+        </Link>{" "}
+        — design system visual proof (S12)
+      </p>
+      <p style={{ color: "var(--text-2)", marginTop: "0.5rem" }}>
+        <Link to="/projects" style={{ color: "var(--jade)" }}>
+          /projects
+        </Link>{" "}
+        — vault registry (S1)
+      </p>
       {isLoading && <p>checking backend…</p>}
       {isError && <p style={{ color: "var(--gov-project)" }}>backend unreachable</p>}
       {data && (
@@ -48,5 +71,20 @@ export function App() {
         </p>
       )}
     </main>
+  );
+}
+
+export function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Landing />} />
+        <Route path="/showcase" element={<Showcase />} />
+        <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/projects/:name" element={<ProjectDetailShell />} />
+        <Route path="/triage" element={<TriagePage />} />
+        <Route path="/triage/:id" element={<TriageDetailPage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

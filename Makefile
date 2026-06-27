@@ -1,7 +1,12 @@
-.PHONY: install dev build test lint typecheck format start
+.PHONY: install dev build test lint typecheck format start check
 
 install:
 	npm install
+
+# Full gate: lint + typecheck + test (the Phase-4 "green" definition — LL-014).
+# `make test` alone does NOT type-check (vitest transpiles per-file), so a type
+# error can ride green; always run `make check` before declaring a story done.
+check: lint typecheck test
 
 dev:
 	npm run dev

@@ -33,6 +33,10 @@ npm install                 # one install, all workspaces
 make dev                    # backend :5174 + frontend :5173 (Vite proxies /api → backend)
 # open http://localhost:5173 — the shell shows backend health + vault reachability
 make test                   # vitest both sides
+
+# If :5174 is taken by another local project's dev server, override the backend
+# port — both Express AND the Vite /api proxy read BACKEND_PORT, so no code change:
+BACKEND_PORT=5184 make dev
 ```
 
 ## Build order (MVP of observe + act)

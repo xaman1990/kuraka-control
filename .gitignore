@@ -16,3 +16,6 @@ dist/
 .env.local
 .DS_Store
 .pytest_cache/
+
+# Playwright MCP scratch (smoke-test driver artifacts)
+.playwright-mcp/
