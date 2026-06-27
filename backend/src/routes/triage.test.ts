@@ -1,11 +1,12 @@
 /**
- * Route-level integration tests for POST /api/triage/:id/route|defer|reject (S5b-1 — AC48).
+ * Route-level integration tests for POST /api/triage/:id/route|defer|reject|apply
+ * (S5b-1 AC48; S5b-2 apply route).
  *
  * Spins an Express app on a random port using createApp() with a TEMP vault.
  * The full stack executes without mocks: route → service → domain → writeFirewall → disk.
  * NEVER touches process.env.KURAKA_VAULT or the real vault.
  *
- * Cases:
+ * Cases (existing S5b-1):
  *   POST /triage/:id/route  — 200 updated TriageDoc; 400 bad body;
  *                             400 missing finding_id; 404 unknown card;
  *                             404 unknown finding_id; 403 PATH_FORBIDDEN;
@@ -15,8 +16,19 @@
  *   POST /triage/:id/reject — 200 doc-level; 200 finding-level; 404 unknown card;
  *                             404 unknown finding_id; 403 PATH_FORBIDDEN (:id guard)
  *
+ * Cases (S5b-2 — POST /triage/:id/apply):
+ *   200 project finding: one-click, disk mutated, temp vault only
+ *   403 CONFIRM_REQUIRED: framework finding, no token — token present in detail
+ *   200 re-POST with token: apply succeeds
+ *   403 replay: same token → USED → CONFIRM_REQUIRED
+ *   409 CONFLICT: sibling applied same target_file → detail has conflicting_card.id
+ *   400 BAD_REQUEST: finding_id absent, unrouted finding, null target_file
+ *   404 NOT_FOUND: unknown card or finding_id
+ *   Phase 6.8 smoke (AC44): full framework confirm round-trip on TEMP vault
+ *
  * Integrity assertion:
  *   - The 200 response doc.date must match the on-disk date (BLOCKER regression guard)
+ *   - The 403 detail NEVER contains the CONFIRM_SECRET or an absolute path
  *
  * Phase 6.8 smoke test (AC50):
  *   - POST route action with TEMP vault → temp card mutated, real vault untouched
@@ -734,5 +746,587 @@ describe("Phase 6.8 smoke test — POST route action with TEMP vault (AC50)", ()
     }
     // If the real card doesn't exist, the assertion passes vacuously
     // (no write could have occurred to a non-existent file).
+  });
+});
+
+// ===========================================================================
+// POST /api/triage/:id/apply — S5b-2
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Apply test helpers (TEMP vault only)
+// ---------------------------------------------------------------------------
+
+const APPLY_CARD_ID = "2026-06-25-apply-test";
+const APPLY_CARD_FILENAME = `${APPLY_CARD_ID}.md`;
+
+/**
+ * Build a triage card fixture for apply tests. Both P1 (project) and P2 (framework)
+ * findings included. target_file uses backtick form; the parser strips backticks.
+ */
+function _makeApplyCardContent(options: {
+  decision?: string;
+  p1Routing?: string;
+  p1Status?: string;
+  p1Target?: string;
+  p2Routing?: string;
+  p2Status?: string;
+  p2Target?: string;
+} = {}): string {
+  const {
+    decision = "pending",
+    p1Routing = "project",
+    p1Status = "pending",
+    p1Target = "agents/project-file.md",
+    p2Routing = "framework",
+    p2Status = "pending",
+    p2Target = "agents/framework-file.md",
+  } = options;
+
+  return [
+    "---",
+    "project: sie_v2",
+    "source: RETRO-2026-06-25",
+    'date: "2026-06-25"',
+    `decision: ${decision}`,
+    "applied: false",
+    "tags:",
+    "  - retro-triage",
+    "---",
+    "",
+    "| # | Finding | Routing | Target file | Severity | Status |",
+    "|---|---------|---------|-------------|----------|--------|",
+    `| P1 | Project finding | ${p1Routing} | \`${p1Target}\` | HIGH | ${p1Status} |`,
+    `| P2 | Framework finding | ${p2Routing} | \`${p2Target}\` | MED | ${p2Status} |`,
+    "",
+    "## Decisions & rationale",
+    "",
+    "Addressed in this cycle.",
+  ].join("\n");
+}
+
+/** Setup APPLY_CARD_ID card in the temp vault. */
+async function _setupApplyVault(cardContent?: string): Promise<void> {
+  tempVaultRoot = await fs.mkdtemp(path.join(os.tmpdir(), "kuraka-apply-route-test-"));
+  await fs.mkdir(path.join(tempVaultRoot, TRIAGE_RECORD_DIR));
+  await fs.writeFile(
+    path.join(tempVaultRoot, TRIAGE_RECORD_DIR, APPLY_CARD_FILENAME),
+    cardContent ?? _makeApplyCardContent(),
+    "utf-8",
+  );
+}
+
+/** Read the apply card from disk. */
+async function _readApplyCard(): Promise<string> {
+  return fs.readFile(
+    path.join(tempVaultRoot, TRIAGE_RECORD_DIR, APPLY_CARD_FILENAME),
+    "utf-8",
+  );
+}
+
+/** Write a second card to the temp vault (for RL-5 sibling tests). */
+async function _writeSiblingCard(sibId: string, content: string): Promise<void> {
+  await fs.writeFile(
+    path.join(tempVaultRoot, TRIAGE_RECORD_DIR, `${sibId}.md`),
+    content,
+    "utf-8",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 200 — project-routed finding (one-click apply)
+// ---------------------------------------------------------------------------
+
+describe("POST /api/triage/:id/apply — 200 project-routed finding (AC43, AC44)", () => {
+  it("should return 200 with a TriageDoc containing the updated finding status", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p1Routing: "project", p1Status: "pending" }));
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P1",
+    });
+
+    // Assert
+    expect(response.status).toBe(200);
+    const body = await response.json() as unknown;
+    const parsed = TriageActionResponse.safeParse(body);
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+
+    const p1 = parsed.data.doc.findings.find((f) => f.id === "P1");
+    expect(p1).toBeDefined();
+    expect(p1!.status).toBe("applied");
+  });
+
+  it("should write the literal string 'applied' to col 5 on disk (no bold, NEVER matter.stringify)", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p1Routing: "project", p1Status: "pending" }));
+    await _startApp();
+
+    // Act
+    await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert — disk content
+    const onDisk = await _readApplyCard();
+    const p1Line = onDisk.split("\n").find((l) => l.includes("| P1 |"))!;
+    expect(p1Line.split("|")[6]?.trim()).toBe("applied");
+  });
+
+  it("should preserve the date field verbatim after project apply (LL-013 / date-preservation guard)", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p1Routing: "project" }));
+    await _startApp();
+
+    // Act
+    await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert — no ISO coercion
+    const onDisk = await _readApplyCard();
+    expect(onDisk).toContain('date: "2026-06-25"');
+    expect(onDisk).not.toMatch(/date:.*T00:00:00/);
+  });
+
+  it("should NOT touch the real vault (TEMP vault isolation — AC43)", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p1Routing: "project" }));
+    await _startApp();
+
+    const realVaultPath = process.env["KURAKA_VAULT"] ?? "";
+    const realCardPath = realVaultPath
+      ? path.join(realVaultPath, TRIAGE_RECORD_DIR, APPLY_CARD_FILENAME)
+      : undefined;
+
+    let realMtimeBefore: number | undefined;
+    if (realCardPath) {
+      try {
+        const s = await fs.stat(realCardPath);
+        realMtimeBefore = s.mtimeMs;
+      } catch { /* real card doesn't exist — fine */ }
+    }
+
+    // Act
+    await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert
+    if (realCardPath && realMtimeBefore !== undefined) {
+      const sAfter = await fs.stat(realCardPath);
+      expect(sAfter.mtimeMs).toBe(realMtimeBefore);
+    }
+    // Vacuously passes when real card doesn't exist.
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 403 CONFIRM_REQUIRED — framework finding, no token
+// ---------------------------------------------------------------------------
+
+describe("POST /api/triage/:id/apply — 403 CONFIRM_REQUIRED (framework, no token) (AC44 Phase 6.8)", () => {
+  it("should return 403 with code CONFIRM_REQUIRED when no confirm_token is provided for a framework finding", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p2Routing: "framework", p2Status: "pending" }));
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P2",
+    });
+
+    // Assert
+    expect(response.status).toBe(403);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("CONFIRM_REQUIRED");
+  });
+
+  it("should include a non-empty confirm_token in the 403 detail (the minted token)", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p2Routing: "framework", p2Status: "pending" }));
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P2" });
+    const body = await response.json() as {
+      error: { detail: { confirm_token: string; expires_at: string; id: string; finding_id: string; target_file: string } };
+    };
+
+    // Assert — token present
+    expect(typeof body.error.detail.confirm_token).toBe("string");
+    expect(body.error.detail.confirm_token.length).toBeGreaterThan(0);
+  });
+
+  it("should include expires_at as an ISO date string in the 403 detail", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p2Routing: "framework", p2Status: "pending" }));
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P2" });
+    const body = await response.json() as { error: { detail: { expires_at: string } } };
+
+    // Assert — ISO date string
+    expect(typeof body.error.detail.expires_at).toBe("string");
+    const parsed = new Date(body.error.detail.expires_at);
+    expect(Number.isNaN(parsed.getTime())).toBe(false);
+  });
+
+  it("should NOT write to disk when returning 403 CONFIRM_REQUIRED (no write before confirm)", async () => {
+    // Arrange
+    const originalContent = _makeApplyCardContent({ p2Routing: "framework", p2Status: "pending" });
+    await _setupApplyVault(originalContent);
+    await _startApp();
+
+    // Act
+    await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P2" });
+
+    // Assert — disk unchanged
+    const onDisk = await _readApplyCard();
+    expect(onDisk).toBe(originalContent);
+  });
+
+  it("should NOT include an absolute file path in the 403 detail (SEC5/SEC10 secret-path guard)", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p2Routing: "framework", p2Status: "pending" }));
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P2" });
+    const body = await response.json() as { error: { detail: Record<string, unknown> } };
+
+    // Assert — none of the detail values is an absolute path
+    for (const value of Object.values(body.error.detail)) {
+      if (typeof value === "string") {
+        expect(path.isAbsolute(value)).toBe(false);
+      }
+    }
+  });
+
+  it("should NOT include the CONFIRM_SECRET in the 403 response body (secret-not-logged guard)", async () => {
+    // Arrange
+    await _setupApplyVault(_makeApplyCardContent({ p2Routing: "framework", p2Status: "pending" }));
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P2" });
+    const rawBody = await response.text();
+
+    // Assert — the raw response text must not contain any 64-char hex string
+    // (CONFIRM_SECRET is 32 bytes; its hex would be 64 chars). If the secret
+    // were included, the pattern would match.
+    // We also check it doesn't contain "CONFIRM_SECRET" literally.
+    expect(rawBody).not.toContain("CONFIRM_SECRET");
+    // The token itself is base64url, not hex — this is the expected form.
+    expect(rawBody).not.toMatch(/[0-9a-f]{64}/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6.8 smoke: framework confirm round-trip (AC44)
+// ---------------------------------------------------------------------------
+
+describe("Phase 6.8 smoke — POST apply framework confirm round-trip (AC44)", () => {
+  it("should complete the full framework confirm flow on TEMP vault: no-token→403→re-POST→200→replay→403", async () => {
+    // Arrange
+    const p2Target = "agents/framework-file.md";
+    await _setupApplyVault(_makeApplyCardContent({
+      p2Routing: "framework",
+      p2Status: "pending",
+      p2Target,
+    }));
+    await _startApp();
+
+    // Step 1: POST without token → 403 + detail.confirm_token present
+    const firstResponse = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P2",
+    });
+    expect(firstResponse.status).toBe(403);
+    const firstBody = await firstResponse.json() as {
+      error: { code: string; detail: { confirm_token: string } };
+    };
+    expect(firstBody.error.code).toBe("CONFIRM_REQUIRED");
+    const mintedToken = firstBody.error.detail.confirm_token;
+    expect(typeof mintedToken).toBe("string");
+    expect(mintedToken.length).toBeGreaterThan(0);
+
+    // Step 2: re-POST with the minted token → 200
+    const secondResponse = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P2",
+      confirm_token: mintedToken,
+    });
+    expect(secondResponse.status).toBe(200);
+    const secondBody = await secondResponse.json() as {
+      doc: { findings: Array<{ id: string; status: string }> };
+    };
+    const p2 = secondBody.doc.findings.find((f) => f.id === "P2");
+    expect(p2!.status).toBe("applied");
+
+    // Assert disk: col 5 of P2 row === "applied"
+    const onDisk = await _readApplyCard();
+    const p2Line = onDisk.split("\n").find((l) => l.includes("| P2 |"))!;
+    expect(p2Line.split("|")[6]?.trim()).toBe("applied");
+
+    // Step 3: replay the SAME token → 403 (USED → CONFIRM_REQUIRED)
+    const replayResponse = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P2",
+      confirm_token: mintedToken,
+    });
+    expect(replayResponse.status).toBe(403);
+    const replayBody = await replayResponse.json() as { error: { code: string } };
+    expect(replayBody.error.code).toBe("CONFIRM_REQUIRED");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 409 CONFLICT — RL-5
+// ---------------------------------------------------------------------------
+
+describe("POST /api/triage/:id/apply — 409 CONFLICT (RL-5, sibling already applied same target)", () => {
+  const SIBLING_ID = "2026-06-25-sibling-card";
+  const SHARED_TARGET = "agents/shared-target.md";
+
+  it("should return 409 CONFLICT when a sibling card has the same target_file already applied", async () => {
+    // Arrange — sibling card with P1 already applied to SHARED_TARGET
+    const siblingContent = [
+      "---",
+      "project: sie_v2",
+      "source: RETRO-2026-06-24",
+      'date: "2026-06-24"',
+      "decision: pending",
+      "applied: false",
+      "tags:",
+      "  - retro-triage",
+      "---",
+      "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+      "|---|---------|---------|-------------|----------|--------|",
+      `| P1 | Sibling finding | project | \`${SHARED_TARGET}\` | HIGH | applied |`,
+      "",
+    ].join("\n");
+
+    // Main card (target) with P1 pending for the SAME target
+    const mainContent = _makeApplyCardContent({
+      p1Routing: "project",
+      p1Status: "pending",
+      p1Target: SHARED_TARGET,
+    });
+
+    await _setupApplyVault(mainContent);
+    await _writeSiblingCard(SIBLING_ID, siblingContent);
+    await _startApp();
+
+    // Act — try to apply main card P1 (same target as sibling's applied P1)
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P1",
+    });
+
+    // Assert
+    expect(response.status).toBe(409);
+    const body = await response.json() as {
+      error: {
+        code: string;
+        detail: { target_file: string; conflicting_card: { id: string; finding_id: string | null } };
+      };
+    };
+    expect(body.error.code).toBe("CONFLICT");
+    expect(body.error.detail.target_file).toBe(SHARED_TARGET);
+    expect(body.error.detail.conflicting_card.id).toBe(SIBLING_ID);
+  });
+
+  it("should not write to main card on disk when 409 CONFLICT is returned (no partial mutation)", async () => {
+    // Arrange
+    const siblingContent = [
+      "---", "project: sie_v2", 'date: "2026-06-24"', "decision: pending", "applied: false", "---", "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+      "|---|---------|---------|-------------|----------|--------|",
+      `| P1 | Applied sibling | project | \`${SHARED_TARGET}\` | HIGH | applied |`,
+    ].join("\n");
+    const mainContent = _makeApplyCardContent({ p1Routing: "project", p1Status: "pending", p1Target: SHARED_TARGET });
+
+    await _setupApplyVault(mainContent);
+    await _writeSiblingCard(SIBLING_ID, siblingContent);
+    await _startApp();
+
+    // Act
+    await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert — main card byte-unchanged
+    const onDisk = await _readApplyCard();
+    expect(onDisk).toBe(mainContent);
+  });
+
+  it("should NOT return 409 when a sibling has status=deferred for the same target (non-blocking)", async () => {
+    // Arrange — deferred sibling does NOT conflict
+    const deferredSibling = [
+      "---", "project: sie_v2", 'date: "2026-06-24"', "decision: pending", "applied: false", "---", "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+      "|---|---------|---------|-------------|----------|--------|",
+      `| P1 | Deferred sibling | project | \`${SHARED_TARGET}\` | HIGH | deferred |`,
+    ].join("\n");
+    const mainContent = _makeApplyCardContent({ p1Routing: "project", p1Status: "pending", p1Target: SHARED_TARGET });
+
+    await _setupApplyVault(mainContent);
+    await _writeSiblingCard(SIBLING_ID, deferredSibling);
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert — not a conflict (200 success)
+    expect(response.status).toBe(200);
+  });
+
+  it("should NOT return 409 when a sibling has status=pending for the same target (non-blocking)", async () => {
+    // Arrange
+    const pendingSibling = [
+      "---", "project: sie_v2", 'date: "2026-06-24"', "decision: pending", "applied: false", "---", "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+      "|---|---------|---------|-------------|----------|--------|",
+      `| P1 | Pending sibling | project | \`${SHARED_TARGET}\` | HIGH | pending |`,
+    ].join("\n");
+    const mainContent = _makeApplyCardContent({ p1Routing: "project", p1Status: "pending", p1Target: SHARED_TARGET });
+
+    await _setupApplyVault(mainContent);
+    await _writeSiblingCard(SIBLING_ID, pendingSibling);
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert
+    expect(response.status).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 400 BAD_REQUEST — missing/blank finding_id, unrouted, null target
+// ---------------------------------------------------------------------------
+
+describe("POST /api/triage/:id/apply — 400 BAD_REQUEST", () => {
+  it("should return 400 BAD_REQUEST when finding_id is absent from the body", async () => {
+    // Arrange
+    await _setupApplyVault();
+    await _startApp();
+
+    // Act — no finding_id (card-level apply → 400)
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {});
+
+    // Assert
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("should return 400 BAD_REQUEST for an unrouted finding (routing is blank)", async () => {
+    // Arrange — P1 with empty routing cell
+    const unroutedContent = [
+      "---",
+      "project: sie_v2",
+      "source: RETRO-2026-06-25",
+      'date: "2026-06-25"',
+      "decision: pending",
+      "applied: false",
+      "tags:",
+      "  - retro-triage",
+      "---",
+      "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+      "|---|---------|---------|-------------|----------|--------|",
+      "| P1 | Unrouted finding |  | `agents/x.md` | HIGH | pending |",
+      "",
+    ].join("\n");
+    await _setupApplyVault(unroutedContent);
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
+  });
+
+  it("should return 400 BAD_REQUEST when the finding target_file is blank (§1.5 null-target guard)", async () => {
+    // Arrange — P1 with empty target_file cell
+    const noTargetContent = [
+      "---",
+      "project: sie_v2",
+      "source: RETRO-2026-06-25",
+      'date: "2026-06-25"',
+      "decision: pending",
+      "applied: false",
+      "tags:",
+      "  - retro-triage",
+      "---",
+      "",
+      "| # | Finding | Routing | Target file | Severity | Status |",
+      "|---|---------|---------|-------------|----------|--------|",
+      "| P1 | No target | project |  | HIGH | pending |",
+      "",
+    ].join("\n");
+    await _setupApplyVault(noTargetContent);
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, { finding_id: "P1" });
+
+    // Assert
+    expect(response.status).toBe(400);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("BAD_REQUEST");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 404 NOT_FOUND — unknown card or finding_id
+// ---------------------------------------------------------------------------
+
+describe("POST /api/triage/:id/apply — 404 NOT_FOUND", () => {
+  it("should return 404 NOT_FOUND when the card does not exist on disk", async () => {
+    // Arrange
+    await _setupApplyVault();
+    await _startApp();
+
+    // Act
+    const response = await _post("/api/triage/2026-01-01-nonexistent/apply", {
+      finding_id: "P1",
+    });
+
+    // Assert
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("should return 404 NOT_FOUND when finding_id does not match any table row", async () => {
+    // Arrange
+    await _setupApplyVault();
+    await _startApp();
+
+    // Act
+    const response = await _post(`/api/triage/${APPLY_CARD_ID}/apply`, {
+      finding_id: "P99",
+    });
+
+    // Assert
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("should return 404 when :id contains a path separator (forward slash guard)", async () => {
+    // Arrange
+    await _setupApplyVault();
+    await _startApp();
+
+    // Act — encoded slash in :id
+    const response = await _post("/api/triage/2026-06-25%2Fevil/apply", {
+      finding_id: "P1",
+    });
+
+    // Assert
+    expect(response.status).toBe(404);
+    const body = await response.json() as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 });
